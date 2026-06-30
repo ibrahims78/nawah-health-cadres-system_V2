@@ -8,17 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Download, FileSpreadsheet, FileText, Loader2,
-  Filter, Columns, ChevronDown, ChevronUp, CheckSquare, Square,
+  Filter, Columns, ChevronDown, ChevronUp, CheckSquare, Square, Calendar,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { ProjectField } from "@shared/schema";
 
 interface PreviewData { total: number; }
-
-const PRESETS = [
-  { id: "full",   icon: "📋", label: "كامل",       desc: "جميع الحقول" },
-  { id: "custom", icon: "⚙️", label: "مخصص",       desc: "اختر الحقول يدوياً" },
-];
 
 function smartDefault(projectName?: string) {
   const now = new Date();
@@ -37,6 +32,8 @@ export function ProjectExport() {
   const [showFilters, setShowFilters] = useState(false);
   const [fileName, setFileName] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [sheetPerGroup, setSheetPerGroup] = useState(false);
   const [groupByField, setGroupByField] = useState("");
 
@@ -45,7 +42,7 @@ export function ProjectExport() {
     queryFn: () => fetch(`/api/projects/${id}/fields`, { credentials: "include" }).then(r => r.json()),
   });
 
-  const { data: project } = useQuery<{ id: string; name: string; [k: string]: any }>({
+  const { data: project } = useQuery<{ id: string; name: string; steps?: string[]; [k: string]: any }>({
     queryKey: ["/api/projects", id],
     queryFn: () => fetch(`/api/projects/${id}`, { credentials: "include" }).then(r => r.json()),
   });
@@ -53,21 +50,58 @@ export function ProjectExport() {
   const visibleFields = useMemo(() => fields.filter(f => f.isVisible !== false), [fields]);
   const allKeys = useMemo(() => visibleFields.map(f => f.key), [visibleFields]);
 
-  const activeCols = preset === "custom" ? customCols : allKeys;
+  const steps: string[] = Array.isArray(project?.steps) ? project.steps : [];
+
+  const groupedByStep = useMemo(() => {
+    const g: Record<number, ProjectField[]> = {};
+    for (const f of visibleFields) {
+      const s = f.stepNumber || 1;
+      if (!g[s]) g[s] = [];
+      g[s].push(f);
+    }
+    return g;
+  }, [visibleFields]);
+
+  const stepNums = Object.keys(groupedByStep).map(Number).sort();
+
+  const dynamicPresets = useMemo(() => {
+    const base = [
+      { id: "full", icon: "📋", label: "كامل", desc: `جميع الحقول (${visibleFields.length})`, keys: allKeys },
+    ];
+    for (const s of stepNums) {
+      const stepFields = groupedByStep[s] || [];
+      const stepName = steps[s - 1] || `الخطوة ${s}`;
+      base.push({
+        id: `step_${s}`,
+        icon: `${s}️⃣`,
+        label: stepName,
+        desc: `${stepFields.length} حقل`,
+        keys: stepFields.map(f => f.key),
+      });
+    }
+    base.push({ id: "custom", icon: "⚙️", label: "مخصص", desc: "اختر الحقول يدوياً", keys: [] });
+    return base;
+  }, [visibleFields, allKeys, stepNums, groupedByStep, steps]);
+
+  const activePreset = dynamicPresets.find(p => p.id === preset);
+  const activeCols = preset === "custom" ? customCols : (activePreset?.keys || allKeys);
 
   const filterParams = useMemo(() => {
     const p = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => { if (v) p.set(`filter_${k}`, v); });
+    if (dateFrom) p.set("dateFrom", dateFrom);
+    if (dateTo) p.set("dateTo", dateTo);
     return p.toString();
-  }, [filters]);
+  }, [filters, dateFrom, dateTo]);
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   const { data: preview, isLoading: previewLoading } = useQuery<PreviewData>({
     queryKey: ["/api/projects", id, "export-preview", filterParams],
     queryFn: () =>
       fetch(`/api/projects/${id}/records?page=1&limit=1&${filterParams}`, { credentials: "include" })
-        .then(r => r.json())
-        .then(d => ({ total: d.total ?? 0 })),
-    staleTime: 30000,
+        .then(r => r.json()).then(d => ({ total: d.total ?? 0 })),
+    staleTime: 30_000,
   });
 
   const filterableFields = useMemo(() =>
@@ -78,13 +112,18 @@ export function ProjectExport() {
     [visibleFields]
   );
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const governorateField = useMemo(() =>
+    visibleFields.find(f =>
+      f.key.includes("governorate") || f.key.includes("محافظة") || f.label.includes("محافظة") || f.label.includes("المحافظة")
+    ),
+    [visibleFields]
+  );
 
   const toggleCustomCol = (key: string) =>
     setCustomCols(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
   const addToFileName = (suffix: string) => {
-    if (suffix) setFileName(prev => `${prev}_${suffix}`);
+    if (suffix) setFileName(prev => `${prev ? prev + "_" : ""}${suffix}`);
   };
 
   const doExport = async () => {
@@ -95,17 +134,13 @@ export function ProjectExport() {
       params.set("format", format);
       params.set("filename", fileName || smartDefault(project?.name));
       params.set("columns", activeCols.join(","));
-      if (sheetPerGroup && groupByField && format === "xlsx") {
-        params.set("groupBy", groupByField);
-      }
+      if (sheetPerGroup && groupByField && format === "xlsx") params.set("groupBy", groupByField);
       Object.entries(filters).forEach(([k, v]) => { if (v) params.set(`filter_${k}`, v); });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
 
-      const url = `/api/projects/${id}/export?${params}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "فشل التصدير" }));
-        throw new Error(err.error || "فشل التصدير");
-      }
+      const res = await fetch(`/api/projects/${id}/export?${params}`, { credentials: "include" });
+      if (!res.ok) { const e = await res.json().catch(() => ({ error: "فشل التصدير" })); throw new Error(e.error || "فشل"); }
       const blob = await res.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -150,17 +185,24 @@ export function ProjectExport() {
               <Button size="sm" variant="outline" onClick={() => {
                 const now = new Date();
                 addToFileName(`${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`);
-              }}>📅 التاريخ</Button>
+              }} data-testid="button-add-date">📅 التاريخ</Button>
               <Button size="sm" variant="outline"
                 onClick={() => preview && addToFileName(`${preview.total}سجل`)}
-                disabled={previewLoading}>
+                disabled={previewLoading} data-testid="button-add-count">
                 🔢 عدد السجلات
               </Button>
+              {governorateField && (
+                <Button size="sm" variant="outline"
+                  onClick={() => addToFileName("المحافظة")}
+                  data-testid="button-add-governorate">
+                  🗺️ المحافظة
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* ② Filters */}
+        {/* ② Filters + Date Range */}
         <Card>
           <CardHeader
             className="pb-2 cursor-pointer select-none"
@@ -178,44 +220,58 @@ export function ProjectExport() {
             </CardTitle>
           </CardHeader>
           {showFilters && (
-            <CardContent className="space-y-3">
-              {filterableFields.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {filterableFields.map(f => {
-                    const opts = (f.options as string[] | null) || [];
-                    return (
-                      <div key={f.key} className="space-y-1">
-                        <Label className="text-xs">{f.label}</Label>
-                        {opts.length > 0 ? (
-                          <select
-                            value={filters[f.key] || ""}
-                            onChange={e => setFilters(p => ({ ...p, [f.key]: e.target.value }))}
-                            className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm"
-                            data-testid={`filter-${f.key}`}
-                          >
-                            <option value="">الكل</option>
-                            {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                        ) : (
-                          <Input
-                            value={filters[f.key] || ""}
-                            onChange={e => setFilters(p => ({ ...p, [f.key]: e.target.value }))}
-                            placeholder={`فلتر ${f.label}...`}
-                            data-testid={`filter-${f.key}`}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+            <CardContent className="space-y-4">
+              {/* Date range */}
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" />
+                  نطاق التاريخ
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">من</Label>
+                    <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 text-sm" data-testid="input-date-from" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">إلى</Label>
+                    <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-8 text-sm" data-testid="input-date-to" />
+                  </div>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground text-center py-4">
-                  لا توجد حقول قابلة للفلترة في هذا المشروع
-                </p>
+              </div>
+
+              {/* Field filters */}
+              {filterableFields.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">فلتر حسب القيمة</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {filterableFields.map(f => {
+                      const opts = (f.options as string[] | null) || [];
+                      return (
+                        <div key={f.key} className="space-y-1">
+                          <Label className="text-xs">{f.label}</Label>
+                          {opts.length > 0 ? (
+                            <select
+                              value={filters[f.key] || ""}
+                              onChange={e => setFilters(p => ({ ...p, [f.key]: e.target.value }))}
+                              className="w-full h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
+                              data-testid={`filter-${f.key}`}
+                            >
+                              <option value="">الكل</option>
+                              {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
+                            <Input value={filters[f.key] || ""} onChange={e => setFilters(p => ({ ...p, [f.key]: e.target.value }))} className="h-8 text-xs" data-testid={`filter-${f.key}`} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
+
               {activeFilterCount > 0 && (
-                <Button size="sm" variant="ghost" className="text-red-500"
-                  onClick={() => setFilters({})}>
+                <Button size="sm" variant="ghost" className="text-red-500 h-7 text-xs"
+                  onClick={() => { setFilters({}); setDateFrom(""); setDateTo(""); }}>
                   ✕ مسح جميع الفلاتر
                 </Button>
               )}
@@ -223,7 +279,7 @@ export function ProjectExport() {
           )}
         </Card>
 
-        {/* ③ Column presets */}
+        {/* ③ Column presets (dynamic from project steps) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -232,8 +288,8 @@ export function ProjectExport() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              {PRESETS.map(p => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {dynamicPresets.map(p => (
                 <button
                   key={p.id}
                   data-testid={`preset-${p.id}`}
@@ -252,41 +308,58 @@ export function ProjectExport() {
                       : "border-slate-200 dark:border-slate-700 hover:border-primary/40"
                   }`}
                 >
-                  <div className="font-semibold">{p.icon} {p.label}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{p.desc}</div>
+                  <div className="font-semibold text-xs">{p.icon} {p.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{p.desc}</div>
                 </button>
               ))}
             </div>
 
-            {/* Custom columns panel */}
+            {/* Custom columns panel — grouped by step */}
             {preset === "custom" && showCustom && (
-              <div className="border rounded-xl p-3 space-y-3 bg-slate-50 dark:bg-slate-800/40">
+              <div className="border rounded-xl p-3 space-y-4 bg-slate-50 dark:bg-slate-800/40">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
-                    اختر الحقول ({customCols.length} / {visibleFields.length})
-                  </span>
+                  <span className="text-sm font-medium">اختر الحقول ({customCols.length} / {visibleFields.length})</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setCustomCols(allKeys)}>تحديد الكل</Button>
-                    <Button size="sm" variant="outline" onClick={() => setCustomCols([])}>إلغاء الكل</Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols(allKeys)}>تحديد الكل</Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols([])}>إلغاء الكل</Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {visibleFields.map(f => (
-                    <label key={f.key} className="flex items-center gap-2 text-xs cursor-pointer hover:text-primary select-none">
-                      {customCols.includes(f.key)
-                        ? <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
-                        : <Square className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
-                      <input
-                        type="checkbox"
-                        hidden
-                        checked={customCols.includes(f.key)}
-                        onChange={() => toggleCustomCol(f.key)}
-                        data-testid={`col-${f.key}`}
-                      />
-                      {f.label}
-                    </label>
-                  ))}
-                </div>
+                {stepNums.map(s => {
+                  const stepFields = groupedByStep[s] || [];
+                  const stepName = steps[s - 1] || `الخطوة ${s}`;
+                  const stepKeys = stepFields.map(f => f.key);
+                  const allChecked = stepKeys.every(k => customCols.includes(k));
+                  return (
+                    <div key={s}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                          <span className="inline-flex w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold items-center justify-center">{s}</span>
+                          {stepName}
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (allChecked) setCustomCols(prev => prev.filter(k => !stepKeys.includes(k)));
+                            else setCustomCols(prev => [...new Set([...prev, ...stepKeys])]);
+                          }}
+                          className="text-[11px] text-primary hover:underline"
+                        >
+                          {allChecked ? "إلغاء تحديد الخطوة" : "تحديد الخطوة"}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        {stepFields.map(f => (
+                          <label key={f.key} className="flex items-center gap-2 text-xs cursor-pointer hover:text-primary select-none">
+                            {customCols.includes(f.key)
+                              ? <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
+                              : <Square className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+                            <input type="checkbox" hidden checked={customCols.includes(f.key)} onChange={() => toggleCustomCol(f.key)} data-testid={`col-${f.key}`} />
+                            <span className="truncate">{f.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -308,28 +381,14 @@ export function ProjectExport() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <button
-                data-testid="format-xlsx"
-                onClick={() => setFormat("xlsx")}
-                className={`p-4 rounded-xl border-2 text-right transition-all ${
-                  format === "xlsx"
-                    ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-                    : "border-slate-200 dark:border-slate-700 hover:border-green-300"
-                }`}
-              >
+              <button data-testid="format-xlsx" onClick={() => setFormat("xlsx")}
+                className={`p-4 rounded-xl border-2 text-right transition-all ${format === "xlsx" ? "border-green-500 bg-green-50 dark:bg-green-900/20" : "border-slate-200 dark:border-slate-700 hover:border-green-300"}`}>
                 <div className="text-2xl mb-1">📗</div>
                 <div className="font-semibold text-sm">Excel (.xlsx)</div>
                 <div className="text-xs text-muted-foreground">تنسيق احترافي وعناوين عربية</div>
               </button>
-              <button
-                data-testid="format-csv"
-                onClick={() => setFormat("csv")}
-                className={`p-4 rounded-xl border-2 text-right transition-all ${
-                  format === "csv"
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                    : "border-slate-200 dark:border-slate-700 hover:border-blue-300"
-                }`}
-              >
+              <button data-testid="format-csv" onClick={() => setFormat("csv")}
+                className={`p-4 rounded-xl border-2 text-right transition-all ${format === "csv" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-slate-200 dark:border-slate-700 hover:border-blue-300"}`}>
                 <div className="text-2xl mb-1">📄</div>
                 <div className="font-semibold text-sm">CSV (.csv)</div>
                 <div className="text-xs text-muted-foreground">UTF-8 مع BOM لدعم Excel العربي</div>
@@ -339,13 +398,7 @@ export function ProjectExport() {
             {format === "xlsx" && visibleFields.length > 0 && (
               <div className="space-y-3 border rounded-xl p-3 bg-slate-50 dark:bg-slate-800/40">
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sheetPerGroup}
-                    onChange={e => setSheetPerGroup(e.target.checked)}
-                    data-testid="check-sheet-per-group"
-                    className="accent-primary w-4 h-4"
-                  />
+                  <input type="checkbox" checked={sheetPerGroup} onChange={e => setSheetPerGroup(e.target.checked)} data-testid="check-sheet-per-group" className="accent-primary w-4 h-4" />
                   <div>
                     <div className="text-sm font-medium">تجميع في Sheets منفصلة</div>
                     <div className="text-xs text-muted-foreground">ورقة عمل منفصلة لكل قيمة في الحقل المحدد</div>
@@ -354,12 +407,9 @@ export function ProjectExport() {
                 {sheetPerGroup && (
                   <div className="space-y-1 pr-7">
                     <Label className="text-xs">التجميع حسب حقل</Label>
-                    <select
-                      value={groupByField}
-                      onChange={e => setGroupByField(e.target.value)}
+                    <select value={groupByField} onChange={e => setGroupByField(e.target.value)}
                       className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm"
-                      data-testid="select-group-field"
-                    >
+                      data-testid="select-group-field">
                       <option value="">اختر حقلاً...</option>
                       {visibleFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
@@ -377,7 +427,7 @@ export function ProjectExport() {
               <span className="text-base font-bold">📊 ملخص التصدير</span>
               {previewLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center mb-5">
+            <div className="grid grid-cols-4 gap-3 text-center mb-5">
               <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
                 <div className="text-2xl font-bold text-primary">
                   {previewLoading ? "…" : (preview?.total ?? 0).toLocaleString("ar")}
@@ -392,6 +442,10 @@ export function ProjectExport() {
                 <div className="text-2xl font-bold text-orange-500 uppercase">{format}</div>
                 <div className="text-xs text-muted-foreground">صيغة الملف</div>
               </div>
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
+                <div className="text-2xl font-bold text-blue-600">{activeFilterCount}</div>
+                <div className="text-xs text-muted-foreground">فلتر نشط</div>
+              </div>
             </div>
 
             <div className="text-sm bg-white dark:bg-slate-800 rounded-lg p-3 space-y-1.5 mb-4">
@@ -399,10 +453,10 @@ export function ProjectExport() {
                 <span className="text-muted-foreground">اسم الملف:</span>
                 <span className="font-mono font-medium">{(fileName || smartDefault(project?.name))}.{format}</span>
               </div>
-              {activeFilterCount > 0 && (
+              {(dateFrom || dateTo) && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">الفلاتر النشطة:</span>
-                  <span className="text-blue-600 font-medium">{activeFilterCount} فلتر</span>
+                  <span className="text-muted-foreground">نطاق التاريخ:</span>
+                  <span className="font-medium">{dateFrom || "—"} → {dateTo || "—"}</span>
                 </div>
               )}
               {sheetPerGroup && groupByField && (
@@ -411,15 +465,13 @@ export function ProjectExport() {
                   <span className="font-medium">{visibleFields.find(f => f.key === groupByField)?.label || groupByField}</span>
                 </div>
               )}
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">الباقة:</span>
+                <span className="font-medium">{activePreset?.label || "كامل"}</span>
+              </div>
             </div>
 
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={doExport}
-              disabled={exporting || activeCols.length === 0}
-              data-testid="button-export"
-            >
+            <Button className="w-full" size="lg" onClick={doExport} disabled={exporting || activeCols.length === 0} data-testid="button-export">
               {exporting
                 ? <><Loader2 className="h-5 w-5 animate-spin ml-2" /> جاري التصدير...</>
                 : <><Download className="h-5 w-5 ml-2" /> تصدير الآن</>}

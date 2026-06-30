@@ -160,7 +160,6 @@ export async function createProjectSheet(projectId: string): Promise<{ ok: boole
         },
       });
       spreadsheetId = newSheet.data.spreadsheetId!;
-      // Save the new sheet ID
       await db.update(projects).set({ googleSheetId: spreadsheetId }).where(eq(projects.id, projectId));
     }
 
@@ -168,5 +167,130 @@ export async function createProjectSheet(projectId: string): Promise<{ ok: boole
     return { ok: true, sheetId: spreadsheetId, message: "✅ تم إنشاء/تحديث Google Sheet بنجاح" };
   } catch (err: any) {
     return { ok: false, message: `❌ ${err.message}` };
+  }
+}
+
+export async function fixProjectSheetHeaders(projectId: string): Promise<{ ok: boolean; message: string; count?: number }> {
+  try {
+    const { sheets, proj } = await getSheetsClient(projectId);
+    if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
+
+    const fields = await getProjectFields(projectId);
+    const sheetName = proj.googleSheetName || "بيانات";
+    const headers = ["م", ...fields.map(f => f.label)];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: proj.googleSheetId,
+      range: `${sheetName}!1:1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [headers] },
+    });
+
+    return { ok: true, message: `✅ تم تصحيح الترويسات — ${headers.length} عمود`, count: headers.length };
+  } catch (err: any) {
+    return { ok: false, message: `❌ ${err.message}` };
+  }
+}
+
+export async function checkProjectSheetColumns(projectId: string): Promise<{
+  ok: boolean; message: string;
+  matched?: string[]; missing?: string[]; extra?: string[];
+}> {
+  try {
+    const { sheets, proj } = await getSheetsClient(projectId);
+    if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
+
+    const fields = await getProjectFields(projectId);
+    const sheetName = proj.googleSheetName || "بيانات";
+    const expected = ["م", ...fields.map(f => f.label)];
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: proj.googleSheetId,
+      range: `${sheetName}!1:1`,
+    });
+
+    const actual: string[] = (res.data.values?.[0] || []).map(String);
+    const matched = expected.filter(h => actual.includes(h));
+    const missing = expected.filter(h => !actual.includes(h));
+    const extra = actual.filter(h => !expected.includes(h));
+
+    const ok = missing.length === 0;
+    const message = ok
+      ? `✅ جميع الأعمدة متطابقة (${matched.length} عمود)`
+      : `⚠️ ${missing.length} أعمدة ناقصة — ${extra.length} أعمدة إضافية`;
+
+    return { ok, message, matched, missing, extra };
+  } catch (err: any) {
+    return { ok: false, message: `❌ ${err.message}` };
+  }
+}
+
+export async function importFromProjectSheet(
+  projectId: string,
+  syncDeleted: boolean = false
+): Promise<{ ok: boolean; message: string; added: number; updated: number; skipped: number }> {
+  try {
+    const { sheets, proj } = await getSheetsClient(projectId);
+    if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID", added: 0, updated: 0, skipped: 0 };
+
+    const fields = await getProjectFields(projectId);
+    const sheetName = proj.googleSheetName || "بيانات";
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: proj.googleSheetId,
+      range: `${sheetName}!A:ZZ`,
+    });
+
+    const rows = res.data.values || [];
+    if (rows.length < 2) return { ok: true, message: "لا توجد بيانات في الـ Sheet", added: 0, updated: 0, skipped: 0 };
+
+    const headerRow = (rows[0] || []).map(String);
+    const labelToKey: Record<string, string> = {};
+    for (const f of fields) labelToKey[f.label] = f.key;
+
+    const colMap: Record<number, string> = {};
+    for (let i = 1; i < headerRow.length; i++) {
+      const key = labelToKey[headerRow[i]];
+      if (key) colMap[i] = key;
+    }
+
+    const { projectRecords: prTable } = await import("../../shared/schema.js");
+    const { eq: eqFn, and: andFn } = await import("drizzle-orm");
+
+    let added = 0, updated = 0, skipped = 0;
+
+    for (const row of rows.slice(1)) {
+      if (!row || row.length === 0) { skipped++; continue; }
+      const seqNum = row[0] ? parseInt(String(row[0])) : null;
+      const data: Record<string, string> = {};
+      for (const [colIdx, key] of Object.entries(colMap)) {
+        data[key] = String(row[parseInt(colIdx)] ?? "");
+      }
+      if (Object.keys(data).length === 0) { skipped++; continue; }
+
+      if (seqNum && !isNaN(seqNum)) {
+        const existing = await db.select({ id: prTable.id })
+          .from(prTable)
+          .where(andFn(eqFn(prTable.projectId, projectId), eqFn(prTable.sequentialNumber, seqNum)));
+
+        if (existing.length > 0) {
+          await db.update(prTable).set({ data, updatedAt: new Date() }).where(eqFn(prTable.id, existing[0].id));
+          updated++;
+        } else {
+          await db.insert(prTable).values({ projectId, sequentialNumber: seqNum, data, submittedAt: new Date() });
+          added++;
+        }
+      } else {
+        skipped++;
+      }
+    }
+
+    return {
+      ok: true,
+      message: `✅ اكتمل: ${added} مُضاف، ${updated} مُحدَّث، ${skipped} مُتجاوَز`,
+      added, updated, skipped,
+    };
+  } catch (err: any) {
+    return { ok: false, message: `❌ ${err.message}`, added: 0, updated: 0, skipped: 0 };
   }
 }

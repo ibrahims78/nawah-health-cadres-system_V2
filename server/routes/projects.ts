@@ -4,7 +4,7 @@ import { projects, projectFields, projectRecords, projectAuditLog, users, userIn
 import { eq, desc, count, gte, and, ilike, or, gt, sql } from "drizzle-orm";
 import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/auth.js";
 import { encrypt, decrypt } from "../services/crypto.js";
-import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, createProjectSheet } from "../services/projectSheets.js";
+import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, createProjectSheet, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet } from "../services/projectSheets.js";
 import { testTelegramBot, getTelegramUpdates } from "../services/telegram.js";
 import { sendInvitationEmail, testEmailConnection } from "../services/email.js";
 import { v4 as uuidv4 } from "uuid";
@@ -455,6 +455,65 @@ router.get("/:id/export", requireAuth, async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── STATS DISTRIBUTIONS ─────────────────────────────────────
+
+router.get("/:id/stats/distributions", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.id);
+    const selectFields = await db.select({ key: projectFields.key, label: projectFields.label })
+      .from(projectFields)
+      .where(and(
+        eq(projectFields.projectId, pid),
+        sql`field_type IN ('select', 'radio')`,
+        eq(projectFields.isVisible, true)
+      ))
+      .orderBy(projectFields.stepNumber, projectFields.orderIndex);
+
+    const allRecords = await db.select({ data: projectRecords.data })
+      .from(projectRecords)
+      .where(eq(projectRecords.projectId, pid));
+
+    const distributions: Record<string, { value: string; count: number }[]> = {};
+    for (const field of selectFields.slice(0, 5)) {
+      const counts: Record<string, number> = {};
+      for (const r of allRecords) {
+        const d = r.data as Record<string, any>;
+        const val = d[field.key];
+        if (val != null && String(val).trim()) {
+          const k = String(val).trim();
+          counts[k] = (counts[k] || 0) + 1;
+        }
+      }
+      distributions[field.key] = Object.entries(counts)
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 20);
+    }
+
+    res.json({ distributions, fields: selectFields });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SHEET TOOLS ─────────────────────────────────────────────
+
+router.post("/:id/fix-sheet-headers", requireAdmin, async (req: Request, res: Response) => {
+  const result = await fixProjectSheetHeaders(String(req.params.id));
+  res.json(result);
+});
+
+router.post("/:id/check-sheet-columns", requireAdmin, async (req: Request, res: Response) => {
+  const result = await checkProjectSheetColumns(String(req.params.id));
+  res.json(result);
+});
+
+router.post("/:id/import-from-sheets", requireAdmin, async (req: Request, res: Response) => {
+  const { syncDeleted } = req.body;
+  const result = await importFromProjectSheet(String(req.params.id), !!syncDeleted);
+  res.json(result);
 });
 
 // ─── SETTINGS ACTIONS ────────────────────────────────────────

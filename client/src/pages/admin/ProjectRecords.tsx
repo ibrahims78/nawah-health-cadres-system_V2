@@ -13,6 +13,7 @@ import {
   ChevronRight, ChevronLeft, Users, Copy, Check,
   Columns3, X, ChevronsLeft, ChevronsRight,
   Printer, Filter, RefreshCw, SkipForward,
+  Link, Upload, Wrench,
 } from "lucide-react";
 import type { ProjectRecord, ProjectField } from "@shared/schema";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,19 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  "مكتمل":          "bg-green-500",
+  "منقوص":          "bg-yellow-400",
+  "مرفوض":          "bg-red-500",
+  "قيد المراجعة":   "bg-blue-500",
+  "نشط":            "bg-emerald-500",
+  "غير نشط":        "bg-slate-400",
+};
+
+function getStatusColor(val: string): string {
+  return STATUS_COLORS[val] || "bg-slate-300 dark:bg-slate-600";
+}
+
 export function ProjectRecords() {
   const { id } = useParams<{ id: string }>();
   const [, nav] = useLocation();
@@ -73,6 +87,24 @@ export function ProjectRecords() {
   const [fieldFilters, setFieldFilters] = useState<Record<string, string>>({});
   const [visibleColKeys, setVisibleColKeys] = useState<string[] | null>(null);
 
+  // Import dialog state
+  const [importOpen, setImportOpen] = useState(false);
+  const [syncDeleted, setSyncDeleted] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ ok: boolean; message: string; added?: number; updated?: number; skipped?: number } | null>(null);
+
+  // Fix headers state
+  const [fixingHeaders, setFixingHeaders] = useState(false);
+  const [fixResult, setFixResult] = useState<string | null>(null);
+
+  // Copy link
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const { data: project } = useQuery<{ id: string; name: string; formEnabled?: boolean; [k: string]: any }>({
+    queryKey: ["/api/projects", id],
+    queryFn: () => fetch(`/api/projects/${id}`, { credentials: "include" }).then(r => r.json()),
+  });
+
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
     return () => clearTimeout(t);
@@ -84,14 +116,13 @@ export function ProjectRecords() {
   });
 
   const visibleFields = useMemo(() => fields.filter(f => f.isVisible !== false), [fields]);
-
   const defaultCols = useMemo(() => visibleFields.slice(0, 5).map(f => f.key), [visibleFields]);
-
   const activeCols = useMemo(() => visibleColKeys ?? defaultCols, [visibleColKeys, defaultCols]);
+  const colFields = useMemo(() => visibleFields.filter(f => activeCols.includes(f.key)), [visibleFields, activeCols]);
 
-  const colFields = useMemo(
-    () => visibleFields.filter(f => activeCols.includes(f.key)),
-    [visibleFields, activeCols]
+  const statusField = useMemo(() =>
+    fields.find(f => f.key === "status" || f.label === "الحالة" || f.key === "recordStatus"),
+    [fields]
   );
 
   const params = useMemo(() => {
@@ -146,8 +177,41 @@ export function ProjectRecords() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+  const copyFormLink = () => {
+    const url = `${window.location.origin}/p/${id}/register`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
 
+  const doImport = async () => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res: any = await apiRequest("POST", `/api/projects/${id}/import-from-sheets`, { syncDeleted });
+      setImportResult(res);
+      if (res.ok) qc.invalidateQueries({ queryKey: ["/api/projects", id, "records"] });
+    } catch (err: any) {
+      setImportResult({ ok: false, message: err.message });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const doFixHeaders = async () => {
+    setFixingHeaders(true);
+    setFixResult(null);
+    try {
+      const res: any = await apiRequest("POST", `/api/projects/${id}/fix-sheet-headers`, {});
+      setFixResult(res.message);
+    } catch (err: any) {
+      setFixResult(`❌ ${err.message}`);
+    } finally {
+      setFixingHeaders(false);
+    }
+  };
+
+  const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const activeFilterCount = Object.values(fieldFilters).filter(Boolean).length;
 
   const filterableFields = useMemo(() =>
@@ -172,18 +236,31 @@ export function ProjectRecords() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {selected.size > 0 && (
-              <Button
-                variant="destructive" size="sm"
+              <Button variant="destructive" size="sm"
                 onClick={() => { if (confirm(`حذف ${selected.size} سجل؟`)) bulkDeleteMut.mutate([...selected]); }}
-                disabled={bulkDeleteMut.isPending}
-                data-testid="button-bulk-delete"
-              >
-                {bulkDeleteMut.isPending
-                  ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
-                  : <Trash2 className="h-4 w-4 ml-1" />}
+                disabled={bulkDeleteMut.isPending} data-testid="button-bulk-delete">
+                {bulkDeleteMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
                 حذف {selected.size} محدد
               </Button>
             )}
+
+            {/* Fix sheet headers */}
+            <Button variant="outline" size="sm" onClick={doFixHeaders} disabled={fixingHeaders} title="تصحيح ترويسات الـ Sheet" data-testid="button-fix-headers">
+              {fixingHeaders ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+            </Button>
+
+            {/* Import from Sheets */}
+            <Button variant="outline" size="sm" onClick={() => { setImportOpen(true); setImportResult(null); }} data-testid="button-import-sheets">
+              <Upload className="h-4 w-4 ml-1" />
+              استيراد Sheets
+            </Button>
+
+            {/* Copy form link */}
+            <Button variant="outline" size="sm" onClick={copyFormLink} data-testid="button-copy-link">
+              {copiedLink ? <Check className="h-4 w-4 ml-1 text-green-500" /> : <Link className="h-4 w-4 ml-1" />}
+              {copiedLink ? "تم النسخ!" : "نسخ رابط النموذج"}
+            </Button>
+
             <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -193,59 +270,50 @@ export function ProjectRecords() {
           </div>
         </div>
 
+        {/* Fix headers result */}
+        {fixResult && (
+          <div className={`text-xs p-2 rounded-lg border flex items-center gap-2 ${fixResult.startsWith("✅") ? "bg-green-50 dark:bg-green-900/20 border-green-200 text-green-700" : "bg-red-50 dark:bg-red-900/20 border-red-200 text-red-700"}`}>
+            {fixResult}
+            <button onClick={() => setFixResult(null)} className="mr-auto hover:opacity-70"><X className="h-3 w-3" /></button>
+          </div>
+        )}
+
         {/* ─── Search + Controls ─── */}
         <div className="flex gap-2 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="بحث في جميع الحقول..."
-              className="pr-9"
-              data-testid="input-search"
-            />
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث في جميع الحقول..." className="pr-9" data-testid="input-search" />
             {search && (
-              <button
-                onClick={() => { setSearch(""); setDebouncedSearch(""); }}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-700"
-              >
+              <button onClick={() => { setSearch(""); setDebouncedSearch(""); }} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-700">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
           {filterableFields.length > 0 && (
-            <Button
-              variant="outline" size="sm"
-              onClick={() => setFilterOpen(v => !v)}
-              data-testid="button-filters"
-              className={cn(activeFilterCount > 0 &&
-                "border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400")}
-            >
+            <Button variant="outline" size="sm" onClick={() => setFilterOpen(v => !v)} data-testid="button-filters"
+              className={cn(activeFilterCount > 0 && "border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400")}>
               <Filter className="h-4 w-4 ml-1" />
               فلتر
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="mr-1.5 h-4 px-1 text-[10px]">{activeFilterCount}</Badge>
-              )}
+              {activeFilterCount > 0 && <Badge variant="secondary" className="mr-1.5 h-4 px-1 text-[10px]">{activeFilterCount}</Badge>}
             </Button>
           )}
 
-          <Button
-            variant="outline" size="sm"
-            onClick={() => setColPickerOpen(v => !v)}
-            data-testid="button-columns"
-          >
+          <Button variant="outline" size="sm" onClick={() => setColPickerOpen(v => !v)} data-testid="button-columns">
             <Columns3 className="h-4 w-4 ml-1" />الأعمدة
           </Button>
 
-          <select
-            value={limit}
-            onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
-            className="h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-sm"
-            data-testid="select-limit"
-          >
-            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n} / صفحة</option>)}
-          </select>
+          {/* Limit buttons */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+            {[10, 25, 50, 100].map(n => (
+              <button
+                key={n}
+                onClick={() => { setLimit(n); setPage(1); }}
+                className={`px-2 py-1 rounded text-xs font-medium transition-all ${limit === n ? "bg-white dark:bg-slate-700 shadow-sm text-primary" : "text-muted-foreground hover:text-slate-700 dark:hover:text-slate-300"}`}
+                data-testid={`limit-${n}`}
+              >{n}</button>
+            ))}
+          </div>
         </div>
 
         {/* ─── Active filter chips ─── */}
@@ -263,9 +331,7 @@ export function ProjectRecords() {
                 </Badge>
               );
             })}
-            <button onClick={() => setFieldFilters({})} className="text-xs text-red-500 hover:underline">
-              مسح الكل
-            </button>
+            <button onClick={() => setFieldFilters({})} className="text-xs text-red-500 hover:underline">مسح الكل</button>
           </div>
         )}
 
@@ -279,22 +345,13 @@ export function ProjectRecords() {
                   <div key={f.key} className="space-y-1">
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400">{f.label}</label>
                     {opts.length > 0 ? (
-                      <select
-                        value={fieldFilters[f.key] || ""}
-                        onChange={e => { setFieldFilters(p => ({ ...p, [f.key]: e.target.value })); setPage(1); }}
-                        className="w-full h-8 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs"
-                        data-testid={`filter-${f.key}`}
-                      >
+                      <select value={fieldFilters[f.key] || ""} onChange={e => { setFieldFilters(p => ({ ...p, [f.key]: e.target.value })); setPage(1); }}
+                        className="w-full h-8 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs" data-testid={`filter-${f.key}`}>
                         <option value="">الكل</option>
                         {opts.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
-                      <Input
-                        value={fieldFilters[f.key] || ""}
-                        onChange={e => { setFieldFilters(p => ({ ...p, [f.key]: e.target.value })); setPage(1); }}
-                        className="h-8 text-xs"
-                        data-testid={`filter-${f.key}`}
-                      />
+                      <Input value={fieldFilters[f.key] || ""} onChange={e => { setFieldFilters(p => ({ ...p, [f.key]: e.target.value })); setPage(1); }} className="h-8 text-xs" data-testid={`filter-${f.key}`} />
                     )}
                   </div>
                 );
@@ -318,18 +375,14 @@ export function ProjectRecords() {
                 const checked = activeCols.includes(f.key);
                 return (
                   <label key={f.key} className="flex items-center gap-2 text-xs cursor-pointer hover:text-primary select-none">
-                    <input
-                      type="checkbox"
-                      checked={checked}
+                    <input type="checkbox" checked={checked}
                       onChange={() => {
                         setVisibleColKeys(prev => {
                           const cur = prev ?? defaultCols;
                           return checked ? cur.filter(k => k !== f.key) : [...cur, f.key];
                         });
                       }}
-                      className="accent-primary"
-                      data-testid={`col-toggle-${f.key}`}
-                    />
+                      className="accent-primary" data-testid={`col-toggle-${f.key}`} />
                     {f.label}
                   </label>
                 );
@@ -341,9 +394,7 @@ export function ProjectRecords() {
         {/* ─── Table ─── */}
         <Card className="overflow-hidden">
           {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
-            </div>
+            <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
           ) : !data?.data?.length ? (
             <div className="text-center py-16 text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -358,19 +409,12 @@ export function ProjectRecords() {
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                     <th className="px-3 py-2.5 w-8">
-                      <input
-                        type="checkbox"
-                        checked={selected.size === data.data.length && data.data.length > 0}
-                        onChange={toggleAll}
-                        className="rounded"
-                        data-testid="checkbox-select-all"
-                      />
+                      <input type="checkbox" checked={selected.size === data.data.length && data.data.length > 0} onChange={toggleAll} className="rounded" data-testid="checkbox-select-all" />
                     </th>
                     <th className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground">#</th>
+                    {statusField && <th className="px-1 py-2.5 w-2" />}
                     {colFields.map(f => (
-                      <th key={f.id} className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">
-                        {f.label}
-                      </th>
+                      <th key={f.id} className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">{f.label}</th>
                     ))}
                     <th className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">التاريخ</th>
                     <th className="px-3 py-2.5 w-28" />
@@ -379,21 +423,18 @@ export function ProjectRecords() {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
                   {data.data.map(record => {
                     const rdata = record.data as Record<string, any>;
+                    const statusVal = statusField ? String(rdata[statusField.key] || "") : "";
                     return (
-                      <tr
-                        key={record.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors group"
-                        data-testid={`row-record-${record.id}`}
-                      >
+                      <tr key={record.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors group" data-testid={`row-record-${record.id}`}>
                         <td className="px-3 py-2.5">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(record.id)}
-                            onChange={() => toggleSelect(record.id)}
-                            className="rounded"
-                          />
+                          <input type="checkbox" checked={selected.has(record.id)} onChange={() => toggleSelect(record.id)} className="rounded" />
                         </td>
                         <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{record.sequentialNumber}</td>
+                        {statusField && (
+                          <td className="px-1 py-2.5">
+                            <div className={`w-1.5 h-8 rounded-full ${getStatusColor(statusVal)}`} title={statusVal} />
+                          </td>
+                        )}
                         {colFields.map(f => {
                           const val = rdata[f.key];
                           const txt = val != null ? String(val) : "";
@@ -402,19 +443,11 @@ export function ProjectRecords() {
                             <td key={f.id} className="px-3 py-2.5 text-xs max-w-[180px]">
                               <div className="flex items-center gap-1">
                                 <span className="truncate block flex-1">
-                                  {debouncedSearch
-                                    ? highlight(txt, debouncedSearch)
-                                    : (txt || <span className="text-slate-300 dark:text-slate-600">—</span>)}
+                                  {debouncedSearch ? highlight(txt, debouncedSearch) : (txt || <span className="text-slate-300 dark:text-slate-600">—</span>)}
                                 </span>
                                 {txt && (
-                                  <button
-                                    onClick={() => handleCopy(txt, copyKey)}
-                                    className="shrink-0 text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                                    title="نسخ"
-                                  >
-                                    {copiedId === copyKey
-                                      ? <Check className="h-3 w-3 text-green-500" />
-                                      : <Copy className="h-3 w-3" />}
+                                  <button onClick={() => handleCopy(txt, copyKey)} className="shrink-0 text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="نسخ">
+                                    {copiedId === copyKey ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                                   </button>
                                 )}
                               </div>
@@ -426,21 +459,13 @@ export function ProjectRecords() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-0.5 justify-end">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" title="عرض"
-                              onClick={() => setViewRecord(record)}
-                              data-testid={`button-view-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="عرض" onClick={() => setViewRecord(record)} data-testid={`button-view-${record.id}`}>
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" title="تعديل"
-                              onClick={() => nav(`/admin/projects/${id}/records/${record.id}/edit`)}
-                              data-testid={`button-edit-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="تعديل" onClick={() => nav(`/admin/projects/${id}/records/${record.id}/edit`)} data-testid={`button-edit-${record.id}`}>
                               <Edit className="h-3.5 w-3.5" />
                             </Button>
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7 text-red-400 hover:text-red-600" title="حذف"
-                              onClick={() => setDeleteId(record.id)}
-                              data-testid={`button-delete-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600" title="حذف" onClick={() => setDeleteId(record.id)} data-testid={`button-delete-${record.id}`}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -471,12 +496,7 @@ export function ProjectRecords() {
                 p === "…" ? (
                   <span key={`e-${i}`} className="px-1 text-muted-foreground text-xs">…</span>
                 ) : (
-                  <Button
-                    key={p} variant={p === page ? "default" : "outline"} size="sm"
-                    className="h-7 min-w-7 px-2 text-xs"
-                    onClick={() => goPage(p as number)}
-                    data-testid={`button-page-${p}`}
-                  >{p}</Button>
+                  <Button key={p} variant={p === page ? "default" : "outline"} size="sm" className="h-7 min-w-7 px-2 text-xs" onClick={() => goPage(p as number)} data-testid={`button-page-${p}`}>{p}</Button>
                 )
               )}
               <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => goPage(page + 1)} disabled={page === totalPages} data-testid="button-next-page">
@@ -486,17 +506,11 @@ export function ProjectRecords() {
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
               <div className="flex items-center gap-1 mr-1">
-                <Input
-                  value={jumpPage}
-                  onChange={e => setJumpPage(e.target.value)}
+                <Input value={jumpPage} onChange={e => setJumpPage(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") { goPage(Number(jumpPage)); setJumpPage(""); } }}
-                  placeholder="صفحة"
-                  className="h-7 w-14 text-xs text-center"
-                  data-testid="input-jump-page"
-                />
+                  placeholder="صفحة" className="h-7 w-14 text-xs text-center" data-testid="input-jump-page" />
                 <Button variant="outline" size="icon" className="h-7 w-7"
-                  onClick={() => { goPage(Number(jumpPage)); setJumpPage(""); }}
-                  data-testid="button-jump">
+                  onClick={() => { goPage(Number(jumpPage)); setJumpPage(""); }} data-testid="button-jump">
                   <SkipForward className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -510,35 +524,25 @@ export function ProjectRecords() {
             {viewRecord && (
               <>
                 <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-700">
-                  <DialogTitle className="text-base font-bold">
-                    تفاصيل السجل #{viewRecord.sequentialNumber}
-                  </DialogTitle>
+                  <DialogTitle className="text-base font-bold">تفاصيل السجل #{viewRecord.sequentialNumber}</DialogTitle>
                   <p className="text-xs text-muted-foreground">
-                    {viewRecord.submittedAt
-                      ? `تاريخ التسجيل: ${new Date(viewRecord.submittedAt).toLocaleDateString("ar")}`
-                      : ""}
+                    {viewRecord.submittedAt ? `تاريخ التسجيل: ${new Date(viewRecord.submittedAt).toLocaleDateString("ar")}` : ""}
                   </p>
                 </DialogHeader>
                 <div className="overflow-y-auto flex-1 p-4">
-                  <dl>
-                    {visibleFields.map(f => {
-                      const rdata = viewRecord.data as Record<string, any>;
-                      return <DetailRow key={f.id} label={f.label} value={rdata[f.key]} />;
-                    })}
-                  </dl>
+                  <dl>{visibleFields.map(f => {
+                    const rdata = viewRecord.data as Record<string, any>;
+                    return <DetailRow key={f.id} label={f.label} value={rdata[f.key]} />;
+                  })}</dl>
                 </div>
                 <DialogFooter className="pt-3 border-t border-slate-100 dark:border-slate-700 gap-2 flex-row">
                   <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print">
                     <Printer className="h-4 w-4 ml-1" /> طباعة
                   </Button>
-                  <Button size="sm"
-                    onClick={() => { setViewRecord(null); nav(`/admin/projects/${id}/records/${viewRecord.id}/edit`); }}
-                    data-testid="button-edit-from-dialog">
+                  <Button size="sm" onClick={() => { setViewRecord(null); nav(`/admin/projects/${id}/records/${viewRecord.id}/edit`); }} data-testid="button-edit-from-dialog">
                     <Edit className="h-4 w-4 ml-1" /> تعديل
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setViewRecord(null)} className="mr-auto" data-testid="button-close-dialog">
-                    إغلاق
-                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setViewRecord(null)} className="mr-auto" data-testid="button-close-dialog">إغلاق</Button>
                 </DialogFooter>
               </>
             )}
@@ -548,29 +552,81 @@ export function ProjectRecords() {
         {/* ─── Delete Confirm Dialog ─── */}
         <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>تأكيد الحذف</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>تأكيد الحذف</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground">هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء.</p>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setDeleteId(null)} data-testid="button-cancel-delete">إلغاء</Button>
-              <Button
-                variant="destructive"
+              <Button variant="destructive"
                 onClick={async () => {
                   if (!deleteId) return;
                   setDeleting(true);
                   try { await deleteMut.mutateAsync(deleteId); }
                   finally { setDeleting(false); }
                 }}
-                disabled={deleting}
-                data-testid="button-confirm-delete"
-              >
+                disabled={deleting} data-testid="button-confirm-delete">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
                 حذف
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ─── Import from Sheets Dialog ─── */}
+        <Dialog open={importOpen} onOpenChange={v => { if (!importing) { setImportOpen(v); if (!v) setImportResult(null); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5 text-green-600" />
+                استيراد البيانات من Google Sheets
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                سيتم قراءة البيانات من الـ Sheet المربوط بهذا المشروع ومطابقتها مع السجلات الموجودة بناءً على الرقم التسلسلي.
+              </p>
+
+              <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <input type="checkbox" checked={syncDeleted} onChange={e => setSyncDeleted(e.target.checked)} className="accent-primary mt-0.5" data-testid="check-sync-deleted" />
+                <div>
+                  <p className="text-sm font-medium">مزامنة المحذوفات</p>
+                  <p className="text-xs text-muted-foreground">حذف السجلات غير الموجودة في الـ Sheet</p>
+                </div>
+              </label>
+
+              {importResult && (
+                <div className={`p-3 rounded-lg border text-sm space-y-2 ${importResult.ok ? "bg-green-50 dark:bg-green-900/20 border-green-200" : "bg-red-50 dark:bg-red-900/20 border-red-200"}`}>
+                  <p className={importResult.ok ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>
+                    {importResult.message}
+                  </p>
+                  {importResult.ok && (
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                        <p className="text-lg font-bold text-green-600">{importResult.added ?? 0}</p>
+                        <p className="text-[11px] text-muted-foreground">مُضاف</p>
+                      </div>
+                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                        <p className="text-lg font-bold text-blue-600">{importResult.updated ?? 0}</p>
+                        <p className="text-[11px] text-muted-foreground">مُحدَّث</p>
+                      </div>
+                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                        <p className="text-lg font-bold text-slate-500">{importResult.skipped ?? 0}</p>
+                        <p className="text-[11px] text-muted-foreground">مُتجاوَز</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setImportOpen(false); setImportResult(null); }} disabled={importing} data-testid="button-cancel-import">إلغاء</Button>
+              <Button onClick={doImport} disabled={importing} className="bg-green-600 hover:bg-green-700" data-testid="button-confirm-import">
+                {importing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Upload className="h-4 w-4 ml-1" />}
+                {importing ? "جاري الاستيراد..." : "بدء الاستيراد"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </Layout>
   );
