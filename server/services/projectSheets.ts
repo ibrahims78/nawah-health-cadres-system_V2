@@ -4,7 +4,7 @@ import { projects, projectFields } from "../../shared/schema.js";
 import { decrypt } from "./crypto.js";
 import { eq } from "drizzle-orm";
 
-async function getSheetsClient(projectId: string) {
+async function getSheetsClient(projectId: string, extraScopes: string[] = []) {
   const [proj] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!proj) throw new Error("المشروع غير موجود");
   if (!proj.googleServiceAccountKeyEnc || !proj.googleServiceAccountEmail) {
@@ -16,11 +16,14 @@ async function getSheetsClient(projectId: string) {
 
   const auth = new google.auth.GoogleAuth({
     credentials,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets",
+      ...extraScopes,
+    ],
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-  return { sheets, proj };
+  return { sheets, proj, auth };
 }
 
 async function getProjectFields(projectId: string) {
@@ -144,15 +147,23 @@ export async function testProjectSheetsConnection(projectId: string): Promise<{ 
   }
 }
 
-export async function createProjectSheet(projectId: string): Promise<{ ok: boolean; sheetId?: string; message: string }> {
+export async function createProjectSheet(projectId: string): Promise<{
+  ok: boolean; sheetId?: string; sheetUrl?: string; message: string;
+}> {
   try {
-    const { sheets, proj } = await getSheetsClient(projectId);
+    const { sheets, proj, auth } = await getSheetsClient(projectId, [
+      "https://www.googleapis.com/auth/drive",
+    ]);
+
     const fields = await getProjectFields(projectId);
     const sheetName = proj.googleSheetName || proj.name || "بيانات";
-
     let spreadsheetId = proj.googleSheetId;
+    let movedToFolder = false;
+    let isNew = false;
 
     if (!spreadsheetId) {
+      isNew = true;
+      // Create spreadsheet
       const newSheet = await sheets.spreadsheets.create({
         requestBody: {
           properties: { title: proj.name },
@@ -160,11 +171,50 @@ export async function createProjectSheet(projectId: string): Promise<{ ok: boole
         },
       });
       spreadsheetId = newSheet.data.spreadsheetId!;
-      await db.update(projects).set({ googleSheetId: spreadsheetId }).where(eq(projects.id, projectId));
+
+      // Move to Drive folder if specified
+      if (proj.googleDriveFolderId) {
+        try {
+          const drive = google.drive({ version: "v3", auth });
+          // Get current parents to remove them
+          const fileInfo = await drive.files.get({
+            fileId: spreadsheetId,
+            fields: "parents",
+          });
+          const currentParents = (fileInfo.data.parents || []).join(",");
+          await drive.files.update({
+            fileId: spreadsheetId,
+            addParents: proj.googleDriveFolderId,
+            removeParents: currentParents || undefined,
+            fields: "id, parents",
+          } as any);
+          movedToFolder = true;
+        } catch (driveErr: any) {
+          console.error("[ProjectSheets] Drive move error:", driveErr.message);
+          // Non-fatal: sheet was created, just not moved
+        }
+      }
+
+      await db.update(projects)
+        .set({ googleSheetId: spreadsheetId })
+        .where(eq(projects.id, projectId));
     }
 
     await ensureHeaders(sheets, spreadsheetId, sheetName, fields);
-    return { ok: true, sheetId: spreadsheetId, message: "✅ تم إنشاء/تحديث Google Sheet بنجاح" };
+
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    const parts: string[] = [];
+    if (isNew) parts.push("تم إنشاء ملف Google Sheet جديد");
+    else parts.push("تم تحديث ترويسات الـ Sheet الموجود");
+    if (movedToFolder) parts.push("ونقله إلى المجلد المحدد في Drive");
+    parts.push(`(${fields.length} عمود)`);
+
+    return {
+      ok: true,
+      sheetId: spreadsheetId,
+      sheetUrl,
+      message: `✅ ${parts.join(" ")}`,
+    };
   } catch (err: any) {
     return { ok: false, message: `❌ ${err.message}` };
   }

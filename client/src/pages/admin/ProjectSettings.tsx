@@ -25,6 +25,7 @@ export function ProjectSettings() {
   const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram">("form");
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [createdSheetUrl, setCreatedSheetUrl] = useState<string | null>(null);
   const [fields, setFields] = useState<ProjectField[]>([]);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -66,6 +67,7 @@ export function ProjectSettings() {
         steps: Array.isArray(project.steps) ? project.steps.join("\n") : "",
         googleSheetId: project.googleSheetId, googleSheetName: project.googleSheetName,
         googleServiceAccountEmail: project.googleServiceAccountEmail,
+        googleDriveFolderId: project.googleDriveFolderId,
         telegramChatId: project.telegramChatId,
       });
     }
@@ -99,10 +101,13 @@ export function ProjectSettings() {
   };
 
   const createSheet = async () => {
-    setTesting(true); setTestResult(null);
+    setTesting(true); setTestResult(null); setCreatedSheetUrl(null);
     const res: any = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
     setTestResult(res.message);
-    if (res.sheetId) qc.invalidateQueries({ queryKey: ["/api/projects", id] });
+    if (res.sheetId) {
+      qc.invalidateQueries({ queryKey: ["/api/projects", id] });
+      if (res.sheetUrl) setCreatedSheetUrl(res.sheetUrl);
+    }
     setTesting(false);
   };
 
@@ -344,27 +349,76 @@ export function ProjectSettings() {
                 data-testid="button-toggle-guide"
               >
                 <span className="text-sm font-semibold flex items-center gap-2">
-                  📖 دليل الإعداد خطوة بخطوة
+                  📖 دليل الإعداد الكامل خطوة بخطوة
                 </span>
                 {showGuide ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
               {showGuide && (
-                <div className="px-4 pb-4 space-y-3 border-t border-slate-100 dark:border-slate-700 pt-3">
-                  {[
-                    { n: 1, title: "إنشاء Service Account", desc: 'انتقل إلى Google Cloud Console → APIs & Services → Credentials → أنشئ "Service Account" جديداً.' },
-                    { n: 2, title: "تفعيل Google Sheets API", desc: 'في Google Cloud Console → APIs → ابحث عن "Google Sheets API" وفعّله.' },
-                    { n: 3, title: "تنزيل مفتاح JSON", desc: "في Service Account الذي أنشأته → Keys → Add Key → Create new key → JSON. احفظ الملف." },
-                    { n: 4, title: "مشاركة الـ Sheet", desc: 'افتح Google Sheet → مشاركة → أضف بريد الـ Service Account (googleServiceAccountEmail) كـ "محرر".' },
-                    { n: 5, title: "إدخال البيانات وحفظ", desc: "انسخ محتوى ملف JSON في حقل المفتاح، أدخل Sheet ID من رابط الـ Sheet، ثم احفظ." },
-                  ].map(step => (
-                    <div key={step.n} className="flex gap-3">
-                      <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
-                      <div>
-                        <p className="text-sm font-semibold">{step.title}</p>
-                        <p className="text-xs text-muted-foreground">{step.desc}</p>
+                <div className="px-4 pb-4 space-y-4 border-t border-slate-100 dark:border-slate-700 pt-4">
+
+                  {/* Section A: Google Cloud */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">أ — إعداد Google Cloud Console</p>
+                    {[
+                      { n: 1, title: "إنشاء مشروع Google Cloud", desc: 'انتقل إلى console.cloud.google.com → أنشئ مشروعاً جديداً أو اختر مشروعاً موجوداً.' },
+                      { n: 2, title: "تفعيل Google Sheets API", desc: 'APIs & Services → Enable APIs → ابحث عن "Google Sheets API" وفعّله.' },
+                      { n: 3, title: "تفعيل Google Drive API", desc: 'APIs & Services → Enable APIs → ابحث عن "Google Drive API" وفعّله. (مطلوب للإنشاء التلقائي في مجلد)' },
+                      { n: 4, title: "إنشاء Service Account", desc: 'APIs & Services → Credentials → Create Credentials → Service Account → أدخل اسماً وأنشئه.' },
+                      { n: 5, title: "تحميل مفتاح JSON", desc: 'افتح الـ Service Account → Keys → Add Key → Create new key → اختر JSON → تحميل. احفظ الملف في مكان آمن.' },
+                    ].map(step => (
+                      <div key={step.n} className="flex gap-3">
+                        <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{step.title}</p>
+                          <p className="text-xs text-muted-foreground">{step.desc}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  <div className="border-t border-dashed border-slate-200 dark:border-slate-700" />
+
+                  {/* Section B: Drive folder */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">ب — إعداد Google Drive (للإنشاء التلقائي في مجلد)</p>
+                    {[
+                      { n: 6, title: "أنشئ مجلداً في Google Drive", desc: 'افتح drive.google.com → مجلد جديد. اختر مكانه وسمّه.' },
+                      { n: 7, title: "شارك المجلد مع Service Account", desc: 'انقر بزر الماوس الأيمن على المجلد → مشاركة → أضف بريد الـ Service Account كـ "محرر". هذا يسمح له بوضع الملفات فيه.' },
+                      { n: 8, title: "انسخ Folder ID", desc: 'افتح المجلد في Drive → الرابط في المتصفح يحتوي على ID: drive.google.com/drive/folders/FOLDER_ID_HERE — انسخه والصقه في حقل "Folder ID" أدناه.' },
+                    ].map(step => (
+                      <div key={step.n} className="flex gap-3">
+                        <span className="shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{step.title}</p>
+                          <p className="text-xs text-muted-foreground">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-dashed border-slate-200 dark:border-slate-700" />
+
+                  {/* Section C: App settings */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">ج — الإعداد في التطبيق</p>
+                    {[
+                      { n: 9, title: "أدخل بيانات Service Account", desc: 'أدخل بريد الـ Service Account وانسخ محتوى ملف JSON كاملاً في حقل المفتاح.' },
+                      { n: 10, title: "أدخل Folder ID (اختياري)", desc: 'إذا أردت إنشاء الـ Sheet داخل مجلد محدد في Drive، أدخل Folder ID هنا. إذا تركته فارغاً سيُنشأ في Drive الخاص بالـ Service Account.' },
+                      { n: 11, title: "احفظ ثم أنشئ الـ Sheet", desc: 'اضغط "حفظ" أولاً، ثم اضغط "إنشاء Sheet تلقائياً". سيُنشئ الملف ويضع الترويسات ويوفر لك رابطاً مباشراً.' },
+                    ].map(step => (
+                      <div key={step.n} className="flex gap-3">
+                        <span className="shrink-0 w-6 h-6 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{step.title}</p>
+                          <p className="text-xs text-muted-foreground">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs text-amber-700 dark:text-amber-400">
+                    ⚠️ <strong>ملاحظة:</strong> إذا لم تحدد Folder ID، سيُنشأ الملف في My Drive الخاص بحساب الـ Service Account. يمكنك إضافة Folder ID لاحقاً ثم الضغط على "إنشاء Sheet تلقائياً" مجدداً لنقله.
+                  </div>
                 </div>
               )}
             </Card>
@@ -402,26 +456,63 @@ export function ProjectSettings() {
                     Service Account JSON Key
                     {project?.hasGoogleKey && <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30">محفوظ</Badge>}
                   </Label>
-                  <Textarea {...register("googleServiceAccountKey")} placeholder='{"type":"service_account",...}' rows={4} dir="ltr" className="font-mono text-xs" data-testid="input-googleServiceAccountKey" />
+                  <Textarea {...register("googleServiceAccountKey")} placeholder='{"type":"service_account","project_id":"...","private_key":"-----BEGIN RSA PRIVATE KEY-----\n..."}' rows={4} dir="ltr" className="font-mono text-xs" data-testid="input-googleServiceAccountKey" />
                   {project?.hasGoogleKey && <p className="text-[11px] text-muted-foreground">اتركه فارغاً للإبقاء على المفتاح الحالي</p>}
+                </div>
+
+                {/* Drive Folder ID */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1.5">
+                    Google Drive Folder ID
+                    <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600">اختياري</Badge>
+                  </Label>
+                  <Input {...register("googleDriveFolderId")} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" dir="ltr" data-testid="input-googleDriveFolderId" />
+                  <p className="text-[11px] text-muted-foreground">
+                    من رابط المجلد في Drive: drive.google.com/drive/folders/<strong>FOLDER_ID</strong>
+                    {" — "}يجب مشاركة المجلد مع بريد الـ Service Account كـ "محرر"
+                  </p>
                 </div>
 
                 {testResult && <ResultBox msg={testResult} />}
 
+                {/* Sheet link after creation */}
+                {createdSheetUrl && (
+                  <a
+                    href={createdSheetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
+                    data-testid="link-open-sheet"
+                  >
+                    <ExternalLink className="h-4 w-4 shrink-0" />
+                    فتح Google Sheet المنشأ
+                  </a>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <Button type="submit" size="sm" disabled={saveMut.isPending} data-testid="button-save-sheets">
                     {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Save className="h-4 w-4 ml-1" />}
-                    حفظ
+                    حفظ الإعدادات
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={testSheets} disabled={testing} data-testid="button-test-sheets">
                     {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <RefreshCw className="h-4 w-4 ml-1" />}
                     اختبار الاتصال
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={createSheet} disabled={testing} data-testid="button-create-sheet">
-                    <Plus className="h-4 w-4 ml-1" />
-                    إنشاء / تحديث الـ Sheet
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={createSheet}
+                    disabled={testing || !project?.hasGoogleKey}
+                    className="bg-green-600 hover:bg-green-700 text-white gap-1"
+                    data-testid="button-create-sheet"
+                  >
+                    {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
+                    إنشاء Sheet تلقائياً
                   </Button>
                 </div>
+                {!project?.hasGoogleKey && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">⚠️ احفظ مفتاح الـ Service Account أولاً لتفعيل زر الإنشاء التلقائي</p>
+                )}
               </Card>
             </form>
 
