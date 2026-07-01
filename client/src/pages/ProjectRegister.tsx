@@ -333,28 +333,52 @@ export function ProjectRegister() {
           <form onSubmit={handleSubmit(d => submitMut.mutate(d))}>
 
             {isReviewStep ? (
-              /* Review card */
-              <Card className="overflow-hidden shadow-sm">
-                <div className="flex items-center gap-3 p-5 border-b border-slate-100 dark:border-slate-700 bg-green-50 dark:bg-green-900/20">
-                  <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+              /* Review — editable fields grouped by step */
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="flex items-center gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4">
+                  <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">
                     <ClipboardCheck className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <h2 className="font-bold text-slate-800 dark:text-slate-100">مراجعة البيانات</h2>
-                    <p className="text-xs text-muted-foreground">تأكد من صحة البيانات قبل الإرسال النهائي</p>
+                    <h2 className="font-bold text-slate-800 dark:text-slate-100">مراجعة وتعديل البيانات</h2>
+                    <p className="text-xs text-muted-foreground">يمكنك تعديل أي حقل مباشرةً قبل الإرسال النهائي</p>
                   </div>
                 </div>
-                <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {fields.map(f => (
-                    <div key={f.id} className="flex justify-between items-center px-5 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
-                      <span className="text-muted-foreground">{f.label}</span>
-                      <span className="font-medium text-slate-800 dark:text-slate-200 max-w-[60%] text-left break-words">
-                        {allValues[f.key] || "—"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
+
+                {/* One card per step */}
+                {steps.slice(0, -1).map((stepName, si) => {
+                  const stepFields = getStepFields(si + 1);
+                  if (stepFields.length === 0) return null;
+                  const StepIcon = STEP_ICONS[si % STEP_ICONS.length];
+                  return (
+                    <Card key={si} className="overflow-hidden shadow-sm">
+                      {/* Step header with "Go to step" button */}
+                      <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                          <StepIcon className="h-4 w-4 text-primary" />
+                        </div>
+                        <span className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{stepName}</span>
+                        <button
+                          type="button"
+                          onClick={() => setStep(si)}
+                          className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1 transition"
+                          data-testid={`button-goto-step-${si}`}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          الانتقال للخطوة
+                        </button>
+                      </div>
+                      {/* Editable fields */}
+                      <div className="p-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {stepFields.map(f => renderField(f))}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
             ) : (
               /* Fields card */
               <Card className="overflow-hidden shadow-sm">
