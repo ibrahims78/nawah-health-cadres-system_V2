@@ -170,6 +170,41 @@ export async function testProjectSheetsConnection(projectId: string): Promise<{ 
   }
 }
 
+/** Extract a human-readable reason from a Google API error */
+function googleErrorReason(e: any): string {
+  // Structured Google API errors have e.errors[0].reason
+  const reason: string = e?.errors?.[0]?.reason || e?.response?.data?.error?.errors?.[0]?.reason || "";
+  const msg: string = e?.message || "";
+  const code: number = e?.code ?? e?.status ?? e?.response?.status ?? 0;
+  console.error("[ProjectSheets] Google API error — code:", code, "reason:", reason, "message:", msg);
+  return reason;
+}
+
+/** Classify a Google API error and return an Arabic hint */
+function classifyDriveError(e: any, context: { folderId?: string; saEmail?: string } = {}): string {
+  const reason = googleErrorReason(e);
+  const msg: string = (e?.message || "").toLowerCase();
+  const code: number = e?.code ?? e?.status ?? e?.response?.status ?? 0;
+
+  const isQuota = reason === "storageQuota" || /storagequota/i.test(reason) || /storage quota/i.test(msg) || /quota exceeded/i.test(msg);
+  const isPermission = reason === "forbidden" || reason === "insufficientPermissions" || /caller does not have permission/i.test(msg) || /insufficient permission/i.test(msg);
+  const isNotFound = reason === "notFound" || code === 404;
+
+  if (isQuota) {
+    return `حصة تخزين الـ Service Account ممتلئة. اضغط "تنظيف Drive" لحذف الملفات الفارغة، أو نظّف Drive الـ SA يدوياً.`;
+  }
+  if (isPermission) {
+    return context.folderId
+      ? `خطأ في الصلاحيات (403): تأكد من مشاركة المجلد مع (${context.saEmail}) بصلاحية "محرر"، وأن Google Drive API مُفعَّل في Google Cloud Console`
+      : `خطأ في الصلاحيات (403): تأكد من تفعيل Google Drive API وأن الـ Service Account لديه الصلاحيات الصحيحة`;
+  }
+  if (isNotFound) {
+    return `خطأ 404: المجلد ID (${context.folderId}) غير موجود أو غير مُشارَك مع (${context.saEmail})`;
+  }
+  const raw = e?.message || "خطأ غير معروف";
+  return `${raw} (code: ${code}, reason: ${reason || "?"})`;
+}
+
 export async function createProjectSheet(projectId: string): Promise<{
   ok: boolean; sheetId?: string; sheetUrl?: string; message: string;
 }> {
@@ -186,17 +221,17 @@ export async function createProjectSheet(projectId: string): Promise<{
     const rawFolder = (proj.googleDriveFolderId || "").trim();
     const folderIdMatch = rawFolder.match(/folders\/([a-zA-Z0-9_-]+)/);
     const folderId = folderIdMatch ? folderIdMatch[1] : rawFolder;
-    console.log("[ProjectSheets] rawFolder:", rawFolder);
-    console.log("[ProjectSheets] folderId extracted:", folderId);
+    console.log("[ProjectSheets] rawFolder:", rawFolder, "| folderId:", folderId);
 
     let spreadsheetId: string;
     let inFolder = false;
+    let folderNote = "";
 
     if (folderId) {
-      // Create file DIRECTLY inside the target folder
-      let driveFile: any;
+      // ── Attempt 1: Drive API — create directly inside the folder ──
+      let driveCreateOk = false;
       try {
-        driveFile = await drive.files.create({
+        const driveFile = await drive.files.create({
           requestBody: {
             name: proj.name,
             mimeType: "application/vnd.google-apps.spreadsheet",
@@ -205,35 +240,73 @@ export async function createProjectSheet(projectId: string): Promise<{
           fields: "id",
           supportsAllDrives: true,
         } as any);
-      } catch (e: any) {
-        console.error("[ProjectSheets] drive.files.create error:", e.code, e.message);
-        const isQuota = /quota/i.test(e.message) || /storageQuota/i.test(e.message);
-        const hint = isQuota
-          ? `حصة التخزين الخاصة بالـ Service Account ممتلئة. اضغط على زر "تنظيف Drive" لحذف الملفات المؤقتة الفارغة التي أنشأها النظام تلقائياً (لن تُحذف ملفات البيانات)`
-          : e.code === 403 || e.status === 403
-          ? `خطأ 403: تأكد من مشاركة المجلد مع (${proj.googleServiceAccountEmail}) كـ "محرر"، وأن Google Drive API مفعَّل`
-          : e.code === 404 || e.status === 404
-          ? `خطأ 404: المجلد ID (${folderId}) غير موجود أو غير مُشارَك مع (${proj.googleServiceAccountEmail})`
-          : `${e.message} (code: ${e.code ?? e.status ?? "?"})`;
-        return { ok: false, message: `❌ ${hint}` };
-      }
-      spreadsheetId = driveFile.data.id!;
-      inFolder = true;
+        spreadsheetId = driveFile.data.id!;
+        inFolder = true;
+        driveCreateOk = true;
+        console.log("[ProjectSheets] Drive create OK — id:", spreadsheetId);
+      } catch (driveErr: any) {
+        const hint = classifyDriveError(driveErr, { folderId, saEmail: proj.googleServiceAccountEmail ?? "" });
+        console.warn("[ProjectSheets] Drive create failed:", hint);
 
-      // Rename the default sheet tab to the desired name
-      const defaultTab = await sheets.spreadsheets.get({ spreadsheetId });
-      const defaultSheetId = defaultTab.data.sheets?.[0]?.properties?.sheetId ?? 0;
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{
-            updateSheetProperties: {
-              properties: { sheetId: defaultSheetId, title: sheetName },
-              fields: "title",
+        // ── Attempt 2: Sheets API fallback — create without folder, then move ──
+        console.log("[ProjectSheets] Trying Sheets API fallback...");
+        try {
+          const newSheet = await sheets.spreadsheets.create({
+            requestBody: {
+              properties: { title: proj.name },
+              sheets: [{ properties: { title: sheetName } }],
             },
-          }],
-        },
-      });
+          });
+          spreadsheetId = newSheet.data.spreadsheetId!;
+          console.log("[ProjectSheets] Sheets API create OK — id:", spreadsheetId);
+
+          // ── Attempt 3: Move the newly created sheet into the folder ──
+          try {
+            const fileMeta = await drive.files.get({ fileId: spreadsheetId, fields: "parents", supportsAllDrives: true } as any);
+            const oldParents = (fileMeta.data as any).parents?.join(",") || "root";
+            await drive.files.update({
+              fileId: spreadsheetId,
+              addParents: folderId,
+              removeParents: oldParents,
+              supportsAllDrives: true,
+              fields: "id,parents",
+            } as any);
+            inFolder = true;
+            console.log("[ProjectSheets] Move to folder OK");
+          } catch (moveErr: any) {
+            const moveHint = classifyDriveError(moveErr, { folderId, saEmail: proj.googleServiceAccountEmail ?? "" });
+            console.warn("[ProjectSheets] Move to folder failed:", moveHint);
+            folderNote = ` (ملاحظة: تعذّر نقل الملف للمجلد — ${moveHint})`;
+          }
+        } catch (sheetsErr: any) {
+          // Both paths failed — return the original Drive error as it's more informative
+          return { ok: false, message: `❌ ${hint}` };
+        }
+      }
+
+      // Rename the default sheet tab (only needed when Drive API created the file)
+      if (!inFolder || driveCreateOk) {
+        try {
+          const defaultTab = await sheets.spreadsheets.get({ spreadsheetId });
+          const defaultSheetId = defaultTab.data.sheets?.[0]?.properties?.sheetId ?? 0;
+          const currentTitle = defaultTab.data.sheets?.[0]?.properties?.title ?? "";
+          if (currentTitle !== sheetName) {
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId,
+              requestBody: {
+                requests: [{
+                  updateSheetProperties: {
+                    properties: { sheetId: defaultSheetId, title: sheetName },
+                    fields: "title",
+                  },
+                }],
+              },
+            });
+          }
+        } catch (renameErr: any) {
+          console.warn("[ProjectSheets] Tab rename failed (non-fatal):", renameErr.message);
+        }
+      }
     } else {
       // No folder specified — create normally via Sheets API
       const newSheet = await sheets.spreadsheets.create({
@@ -257,15 +330,17 @@ export async function createProjectSheet(projectId: string): Promise<{
     const parts: string[] = [];
     parts.push("تم إنشاء ملف Google Sheet جديد");
     if (inFolder) parts.push("في المجلد المحدد");
+    else if (folderId) parts.push("(في Drive الـ SA — تعذّر وضعه في المجلد)");
     parts.push(`بـ ${fields.length} عمود`);
 
     return {
       ok: true,
       sheetId: spreadsheetId,
       sheetUrl,
-      message: `✅ ${parts.join(" ")}`,
+      message: `✅ ${parts.join(" ")}${folderNote}`,
     };
   } catch (err: any) {
+    console.error("[ProjectSheets] createProjectSheet unexpected error:", err.message);
     return { ok: false, message: `❌ ${err.message}` };
   }
 }
@@ -396,59 +471,76 @@ export async function importFromProjectSheet(
 }
 
 /**
- * Deletes orphaned Google Sheets files owned by the Service Account that are
- * NOT inside any user folder (i.e., they have no parents other than "root").
- * These are temporary files created during setup/testing that contain no data.
- * Files inside a shared folder (the user's target folder) are never touched.
+ * Deletes ALL files owned by the Service Account that are NOT linked to any
+ * active project sheet. Searches across all drives (including Shared Drives)
+ * with full pagination support. Protects only files whose IDs are saved in
+ * the projects table.
  */
 export async function cleanupServiceAccountDrive(projectId: string): Promise<{
-  ok: boolean; message: string; deleted: number; skipped: number;
+  ok: boolean; message: string; deleted: number; skipped: number; found: number;
 }> {
   try {
-    const { auth, proj } = await getSheetsClient(projectId, [
+    const { auth } = await getSheetsClient(projectId, [
       "https://www.googleapis.com/auth/drive",
     ]);
     const drive = google.drive({ version: "v3", auth });
 
-    // List all Google Sheets files in Service Account's Drive
-    const listRes = await drive.files.list({
-      q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-      fields: "files(id, name, parents)",
-      pageSize: 100,
-    } as any);
-
-    const files = listRes.data.files || [];
-    const currentSheetId = proj.googleSheetId;
-
-    // Extract folder IDs that are referenced by any project
+    // Collect ALL known sheet IDs from every project — never delete these
     const allProjects = await db.select({ sheetId: projects.googleSheetId }).from(projects);
     const knownSheetIds = new Set(allProjects.map(p => p.sheetId).filter(Boolean));
+
+    // Paginate through ALL files owned by the SA (all types, all drives)
+    const allFiles: Array<{ id: string; name: string }> = [];
+    let pageToken: string | undefined;
+
+    do {
+      const listRes: any = await drive.files.list({
+        // No mimeType filter — find ALL file types
+        q: "trashed=false",
+        fields: "nextPageToken, files(id, name, mimeType)",
+        pageSize: 200,
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true,
+        ...(pageToken ? { pageToken } : {}),
+      } as any);
+
+      const batch = listRes.data.files || [];
+      allFiles.push(...batch);
+      pageToken = listRes.data.nextPageToken;
+      console.log(`[ProjectSheets] cleanup page — found ${batch.length} files, total: ${allFiles.length}`);
+    } while (pageToken);
 
     let deleted = 0;
     let skipped = 0;
 
-    for (const file of files) {
+    for (const file of allFiles) {
       if (!file.id) continue;
-      // Protect: never delete a file that is the active sheet for any project
-      if (knownSheetIds.has(file.id)) { skipped++; continue; }
-      // Delete everything else: orphaned (no parents) AND old test files in the folder
+      // Protect any sheet linked to a project
+      if (knownSheetIds.has(file.id)) {
+        console.log("[ProjectSheets] cleanup protected:", file.id, file.name);
+        skipped++;
+        continue;
+      }
       try {
-        await drive.files.delete({ fileId: file.id } as any);
+        await drive.files.delete({ fileId: file.id, supportsAllDrives: true } as any);
         deleted++;
         console.log("[ProjectSheets] cleanup deleted:", file.id, file.name);
       } catch (err: any) {
-        console.warn("[ProjectSheets] cleanup could not delete:", file.id, err.message);
+        console.warn("[ProjectSheets] cleanup could not delete:", file.id, file.name, "—", err.message);
         skipped++;
       }
     }
 
+    const found = allFiles.length;
     return {
       ok: true,
+      found,
       deleted,
       skipped,
-      message: `✅ تم التنظيف: حُذف ${deleted} ملف مؤقت فارغ، تجاوز ${skipped} ملف محمي`,
+      message: `✅ تم التنظيف: فحص ${found} ملف، حُذف ${deleted}، تجاوز ${skipped} محمي`,
     };
   } catch (err: any) {
-    return { ok: false, deleted: 0, skipped: 0, message: `❌ ${err.message}` };
+    console.error("[ProjectSheets] cleanupServiceAccountDrive error:", err.message);
+    return { ok: false, found: 0, deleted: 0, skipped: 0, message: `❌ ${err.message}` };
   }
 }
