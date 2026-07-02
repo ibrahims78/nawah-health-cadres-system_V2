@@ -14,6 +14,12 @@ import pformRoutes from "./routes/pform.js";
 
 dotenv.config();
 
+// ── Startup checks ────────────────────────────────────────────
+if (!process.env.SESSION_SECRET) {
+  console.error("❌ SESSION_SECRET is not set. Refusing to start. Set it in Replit Secrets.");
+  process.exit(1);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -24,21 +30,47 @@ app.set("trust proxy", 1);
 
 const PgSession = connectPgSimple(session);
 
+// ── CORS: restrict to known Replit domains + localhost in dev ─
+const allowedOrigins = (() => {
+  const set = new Set<string>();
+  if (process.env.REPLIT_DEV_DOMAIN) set.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+  if (process.env.REPLIT_DOMAINS) {
+    process.env.REPLIT_DOMAINS.split(",").forEach(d => set.add(`https://${d.trim()}`));
+  }
+  if (process.env.NODE_ENV !== "production") {
+    set.add("http://localhost:5000");
+    set.add("http://localhost:3001");
+    set.add("http://127.0.0.1:5000");
+  }
+  return [...set];
+})();
+
 app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => {
+    // Same-origin (no header) or known origin → allow
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// ── Session ───────────────────────────────────────────────────
 app.use(session({
   store: new PgSession({ pool, createTableIfMissing: true }),
-  secret: process.env.SESSION_SECRET || "healthcare-secret-2026-nawah",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
+    // sameSite: lax blocks cross-site subresource requests (fetch/XHR) from sending cookies
+    // which is sufficient CSRF protection for JSON API endpoints.
+    // sameSite: none is NOT used — the frontend and backend share the same Replit domain.
     secure: process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1",
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: (process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1") ? "none" : "lax",
+    sameSite: "lax",
   },
 }));
 

@@ -700,34 +700,6 @@ router.post("/:id/telegram-updates", requireAdmin, async (req: Request, res: Res
   }
 });
 
-// ─── GLOBAL SETTINGS (app name, SMTP for invitations) ────────
-
-router.get("/global-settings", requireAdmin, async (_req, res) => {
-  try {
-    const [s] = await db.select().from(systemSettings).where(eq(systemSettings.id, "singleton"));
-    if (!s) return res.json({});
-    const { smtpPassEnc, ...safe } = s;
-    res.json({ ...safe, hasSmtpPass: !!smtpPassEnc });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch("/global-settings", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const body = req.body;
-    const update: any = { updatedAt: new Date() };
-    const plain = ["appName", "appLogoUrl", "defaultLanguage", "timezone", "invitationExpiryHours",
-      "smtpHost", "smtpPort", "smtpUser", "smtpFromName"];
-    for (const f of plain) { if (f in body) update[f] = body[f]; }
-    if (body.smtpPass) update.smtpPassEnc = encrypt(body.smtpPass);
-    await db.update(systemSettings).set(update).where(eq(systemSettings.id, "singleton"));
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.post("/test-email", requireAdmin, async (req: Request, res: Response) => {
   const { host, port, user, pass } = req.body;
   const result = await testEmailConnection(
@@ -786,11 +758,6 @@ router.post("/reset-password/:userId", requireAdmin, async (req: Request, res: R
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
-
-router.get("/users-list", requireAdmin, async (_req, res) => {
-  const list = await db.select({ id: users.id, fullName: users.fullName, email: users.email, role: users.role, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt }).from(users);
-  res.json(list);
 });
 
 router.patch("/users/:userId", requireAdmin, async (req: Request, res: Response) => {
