@@ -32,18 +32,24 @@ async function getProjectFields(projectId: string) {
     .orderBy(projectFields.stepNumber, projectFields.orderIndex);
 }
 
+/** Wrap sheet name in single quotes so spaces/special chars work in range notation */
+function sheetRange(name: string, range: string): string {
+  const escaped = name.replace(/'/g, "''");
+  return `'${escaped}'!${range}`;
+}
+
 // Ensure header row exists with all field labels
 async function ensureHeaders(sheets: any, spreadsheetId: string, sheetName: string, fields: any[]) {
   const headers = ["م", ...fields.map(f => f.label)];
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!1:1`,
+    range: sheetRange(sheetName, "1:1"),
   });
   const existing = res.data.values?.[0] || [];
   if (existing.join(",") !== headers.join(",")) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${sheetName}!1:1`,
+      range: sheetRange(sheetName, "1:1"),
       valueInputOption: "RAW",
       requestBody: { values: [headers] },
     });
@@ -64,7 +70,7 @@ export async function appendRecordToSheet(projectId: string, recordData: Record<
 
     const res = await sheets.spreadsheets.values.append({
       spreadsheetId: proj.googleSheetId,
-      range: `${sheetName}!A:A`,
+      range: sheetRange(sheetName, "A:A"),
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: [row] },
@@ -91,7 +97,7 @@ export async function updateRecordRow(projectId: string, rowIndex: number, recor
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: proj.googleSheetId,
-      range: `${sheetName}!A${rowIndex}`,
+      range: sheetRange(sheetName, `A${rowIndex}`),
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
@@ -231,7 +237,7 @@ export async function fixProjectSheetHeaders(projectId: string): Promise<{ ok: b
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: proj.googleSheetId,
-      range: `${sheetName}!1:1`,
+      range: sheetRange(sheetName, "1:1"),
       valueInputOption: "RAW",
       requestBody: { values: [headers] },
     });
@@ -256,7 +262,7 @@ export async function checkProjectSheetColumns(projectId: string): Promise<{
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: proj.googleSheetId,
-      range: `${sheetName}!1:1`,
+      range: sheetRange(sheetName, "1:1"),
     });
 
     const actual: string[] = (res.data.values?.[0] || []).map(String);
@@ -288,7 +294,7 @@ export async function importFromProjectSheet(
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: proj.googleSheetId,
-      range: `${sheetName}!A:ZZ`,
+      range: sheetRange(sheetName, "A:ZZ"),
     });
 
     const rows = res.data.values || [];
