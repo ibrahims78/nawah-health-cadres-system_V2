@@ -489,13 +489,47 @@ export function ProjectSettings() {
                   </div>
                 </div>
 
+                {/* Service Account JSON Key */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-2">
+                    {isAr ? "مفتاح الـ Service Account (JSON)" : "Service Account Key (JSON)"}
+                    {project?.hasGoogleKey && (
+                      <Badge variant="secondary" className="font-normal text-[10px] text-green-700 bg-green-50 border-green-200">
+                        {isAr ? "✅ محفوظ" : "✅ Saved"}
+                      </Badge>
+                    )}
+                  </Label>
+                  <Textarea
+                    {...register("googleServiceAccountKey")}
+                    rows={4}
+                    dir="ltr"
+                    className="font-mono text-[11px] resize-y"
+                    placeholder={project?.hasGoogleKey
+                      ? (isAr ? "محفوظ — اتركه فارغاً للإبقاء على المفتاح الحالي" : "Saved — leave empty to keep current key")
+                      : (isAr ? 'الصق محتوى ملف JSON هنا...\n{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}' : 'Paste the JSON file content here...\n{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}')}
+                    data-testid="input-googleKey"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {isAr
+                      ? "محتوى ملف JSON الذي نزّلته من Google Cloud Console عند إنشاء الـ Service Account."
+                      : "The content of the JSON file you downloaded from Google Cloud Console when creating the Service Account."}
+                  </p>
+                </div>
+
+                {/* Current Sheet ID */}
                 <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <Label className="text-xs flex items-center gap-2">
                     {isAr ? "معرف ملف الـ Sheet الحالي" : "Current Sheet ID"}
                     {project?.googleSheetId && <Badge variant="secondary" className="font-normal text-[10px]">{isAr ? "موجود" : "Present"}</Badge>}
                   </Label>
                   <div className="flex gap-2">
-                    <Input {...register("googleSheetId")} placeholder="spreadsheet_id_from_url" className="font-mono text-xs flex-1" readOnly={!showManualSheetId} data-testid="input-sheetId" />
+                    <Input
+                      {...register("googleSheetId")}
+                      placeholder="spreadsheet_id_from_url"
+                      className="font-mono text-xs flex-1"
+                      readOnly={!showManualSheetId && !!project?.googleSheetId}
+                      data-testid="input-sheetId"
+                    />
                     {!showManualSheetId && project?.googleSheetId && (
                       <Button type="button" variant="outline" size="sm" onClick={() => setShowManualSheetId(true)} title={isAr ? "تعديل يدوياً" : "Edit manually"}>
                         <Wrench className="h-4 w-4" />
@@ -507,6 +541,13 @@ export function ProjectSettings() {
                       className="inline-flex items-center text-[11px] text-blue-600 hover:underline gap-1">
                       <ExternalLink className="h-3 w-3" /> {isAr ? "فتح ملف الـ Sheet الحالي" : "Open current Sheet file"}
                     </a>
+                  )}
+                  {!project?.googleSheetId && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {isAr
+                        ? "أدخل ID يدوياً أو استخدم زر «إنشاء ملف Sheet» لإنشائه تلقائياً."
+                        : "Enter an ID manually or use the «Create Sheet File» button to create one automatically."}
+                    </p>
                   )}
                 </div>
 
