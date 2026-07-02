@@ -6,9 +6,15 @@ dotenv.config();
 
 const { Pool } = pg;
 
+const sslConfig = process.env.DATABASE_URL?.includes("sslmode=require") ||
+  process.env.DATABASE_URL?.includes("ssl=true") ||
+  process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: false,
+  ssl: sslConfig,
 });
 
 export const db = drizzle(pool, { schema });

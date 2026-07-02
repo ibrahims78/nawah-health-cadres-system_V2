@@ -26,6 +26,26 @@ router.get("/", requireAuth, async (_req, res) => {
   }
 });
 
+// ─── STATIC ROUTES (must come before /:id to avoid shadowing) ───
+
+router.get("/global-settings", requireAdmin, async (_req, res) => {
+  try {
+    const [s] = await db.select().from(systemSettings).where(eq(systemSettings.id, "singleton"));
+    if (!s) return res.json({});
+    const { smtpPassEnc, ...safe } = s;
+    res.json({ ...safe, hasSmtpPass: !!smtpPassEnc });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/users-list", requireAdmin, async (_req, res) => {
+  const list = await db.select({ id: users.id, fullName: users.fullName, email: users.email, role: users.role, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt }).from(users);
+  res.json(list);
+});
+
+// ─── DYNAMIC ROUTES ───────────────────────────────────────────
+
 router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [proj] = await db.select().from(projects).where(eq(projects.id, String(req.params.id)));
@@ -74,6 +94,21 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
     }
 
     res.json({ ok: true, project: proj });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/global-settings", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    const update: any = { updatedAt: new Date() };
+    const plain = ["appName", "appLogoUrl", "defaultLanguage", "timezone", "invitationExpiryHours",
+      "smtpHost", "smtpPort", "smtpUser", "smtpFromName"];
+    for (const f of plain) { if (f in body) update[f] = body[f]; }
+    if (body.smtpPass) update.smtpPassEnc = encrypt(body.smtpPass);
+    await db.update(systemSettings).set(update).where(eq(systemSettings.id, "singleton"));
+    res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -67,8 +67,15 @@ router.post("/:projectId/verify-code", verifyLimiter, async (req: Request, res: 
 router.post("/:projectId/submit", submitLimiter, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.projectId);
-    const [projCheck] = await db.select({ invitationCode: projects.invitationCode })
-      .from(projects).where(eq(projects.id, pid));
+    const [projCheck] = await db.select({
+      invitationCode: projects.invitationCode,
+      formEnabled: projects.formEnabled,
+      formDisabledMessage: projects.formDisabledMessage,
+    }).from(projects).where(eq(projects.id, pid));
+    if (!projCheck) return res.status(404).json({ error: "المشروع غير موجود" });
+    if (!projCheck.formEnabled) {
+      return res.status(403).json({ error: projCheck.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+    }
     const needsCode = !!(projCheck?.invitationCode?.trim());
     if (needsCode && !(req.session as any)[`code_${pid}`]) {
       return res.status(401).json({ error: "يجب التحقق من رمز الدعوة أولاً" });
