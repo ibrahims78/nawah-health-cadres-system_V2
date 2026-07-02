@@ -33,6 +33,20 @@ async function getProjectFields(projectId: string) {
 }
 
 /** Wrap sheet name in single quotes so spaces/special chars work in range notation */
+/**
+ * Sanitize a string for use as a Google Sheets tab name.
+ * Rules: max 100 chars, no \ / ? * [ ] :, not empty, not "History".
+ */
+function sanitizeSheetTabName(name: string): string {
+  let clean = (name || "بيانات")
+    .replace(/[\\/?*[\]:]/g, " ")   // replace forbidden chars with space
+    .replace(/\s+/g, " ")            // collapse multiple spaces
+    .trim()
+    .slice(0, 100);                  // max 100 characters
+  if (!clean || clean.toLowerCase() === "history") clean = "بيانات";
+  return clean;
+}
+
 function sheetRange(name: string, range: string): string {
   const escaped = name.replace(/'/g, "''");
   return `'${escaped}'!${range}`;
@@ -78,7 +92,7 @@ export async function appendRecordToSheet(projectId: string, recordData: Record<
     if (!proj.googleSheetId) return null;
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
 
     await ensureSheetTab(sheets, proj.googleSheetId, sheetName);
     await ensureHeaders(sheets, proj.googleSheetId, sheetName, fields);
@@ -108,7 +122,7 @@ export async function updateRecordRow(projectId: string, rowIndex: number, recor
     if (!proj.googleSheetId) return;
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
 
     const row = [String(seqNum), ...fields.map(f => String(recordData[f.key] ?? ""))];
 
@@ -130,7 +144,7 @@ export async function deleteRecordRow(projectId: string, rowIndex: number): Prom
 
     // Get spreadsheet ID of the sheet to get sheetId
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: proj.googleSheetId });
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
     const sheetMeta = spreadsheet.data.sheets?.find(
       (s: any) => s.properties?.title === sheetName
     );
@@ -265,7 +279,8 @@ export async function createProjectSheet(projectId: string, isBackground = false
     ]);
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || proj.name || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    console.log("[ProjectSheets] sheetName (sanitized):", sheetName);
     const drive = google.drive({ version: "v3", auth });
 
     // Accept either a full Drive URL or a bare folder ID
@@ -474,11 +489,15 @@ export async function createProjectSheet(projectId: string, isBackground = false
   } catch (err: any) {
     console.error("[ProjectSheets] createProjectSheet unexpected error:", err.message);
 
-    const msg: string = (err.message || "").toLowerCase();
     const isPermission =
       /caller does not have permission/i.test(err.message) ||
       /insufficient permission/i.test(err.message) ||
       err?.code === 403 || err?.status === 403;
+
+    const isInvalidArg =
+      /invalid argument/i.test(err.message) ||
+      /INVALID_ARGUMENT/i.test(err.message) ||
+      err?.code === 400 || err?.status === 400;
 
     if (isPermission) {
       return {
@@ -492,6 +511,19 @@ export async function createProjectSheet(projectId: string, isBackground = false
       };
     }
 
+    if (isInvalidArg) {
+      return {
+        ok: false,
+        message:
+          "❌ بيانات غير صالحة (400) — تحقق من الخطوات التالية:\n" +
+          "١. تأكد أن «اسم ملف الـ Sheet» في إعدادات المشروع لا يحتوي على أحرف خاصة مثل : * ? / \\ [ ]\n" +
+          "   (النظام يُنظّف الاسم تلقائياً — إذا استمر الخطأ فأدخل اسماً بسيطاً مثل «بيانات»)\n" +
+          "٢. تأكد أن معرف مجلد Drive (Folder ID) صحيح وليس رابطاً كاملاً.\n" +
+          "٣. تأكد أن ملف JSON للـ Service Account مُدخَل بالكامل وصحيح.\n" +
+          `الخطأ الأصلي: ${err.message}`,
+      };
+    }
+
     return { ok: false, message: `❌ ${err.message}` };
   }
 }
@@ -502,7 +534,7 @@ export async function fixProjectSheetHeaders(projectId: string): Promise<{ ok: b
     if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
     const headers = ["م", ...fields.map(f => f.label)];
 
     await sheets.spreadsheets.values.update({
@@ -527,7 +559,7 @@ export async function checkProjectSheetColumns(projectId: string): Promise<{
     if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
     const expected = ["م", ...fields.map(f => f.label)];
 
     const res = await sheets.spreadsheets.values.get({
@@ -560,7 +592,7 @@ export async function importFromProjectSheet(
     if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID", added: 0, updated: 0, skipped: 0 };
 
     const fields = await getProjectFields(projectId);
-    const sheetName = proj.googleSheetName || "بيانات";
+    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: proj.googleSheetId,
