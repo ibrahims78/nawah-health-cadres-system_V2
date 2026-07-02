@@ -205,8 +205,59 @@ function classifyDriveError(e: any, context: { folderId?: string; saEmail?: stri
   return `${raw} (code: ${code}, reason: ${reason || "?"})`;
 }
 
-export async function createProjectSheet(projectId: string): Promise<{
-  ok: boolean; sheetId?: string; sheetUrl?: string; message: string;
+// ── Background sheet-creation job registry ──────────────────────────────────
+type JobState = { attempt: number; maxAttempts: number; timer?: ReturnType<typeof setTimeout> };
+const pendingJobs = new Map<string, JobState>();
+
+export function isSheetCreationPending(projectId: string): boolean {
+  return pendingJobs.has(projectId);
+}
+
+/** Cancel any running background job for this project */
+export function cancelSheetCreationJob(projectId: string) {
+  const job = pendingJobs.get(projectId);
+  if (job?.timer) clearTimeout(job.timer);
+  pendingJobs.delete(projectId);
+}
+
+/** Start (or restart) a background retry loop for creating the sheet */
+export function startBackgroundSheetCreation(projectId: string) {
+  cancelSheetCreationJob(projectId);
+  const job: JobState = { attempt: 0, maxAttempts: 20 };
+  pendingJobs.set(projectId, job);
+
+  const attempt = async () => {
+    if (!pendingJobs.has(projectId)) return; // cancelled
+    job.attempt++;
+    console.log(`[SheetBG] Project ${projectId} — attempt ${job.attempt}/${job.maxAttempts}`);
+    try {
+      const result = await createProjectSheet(projectId, true /* isBackground */);
+      if (result.ok) {
+        console.log(`[SheetBG] Project ${projectId} — created successfully: ${result.sheetId}`);
+        cancelSheetCreationJob(projectId);
+        return;
+      }
+      // If quota still exceeded, schedule next attempt
+      if (/quota/i.test(result.message) && job.attempt < job.maxAttempts) {
+        console.log(`[SheetBG] Project ${projectId} — quota still full, next try in 30s`);
+        job.timer = setTimeout(attempt, 30_000);
+      } else {
+        console.error(`[SheetBG] Project ${projectId} — giving up after ${job.attempt} attempts: ${result.message}`);
+        cancelSheetCreationJob(projectId);
+      }
+    } catch (err: any) {
+      console.error(`[SheetBG] Project ${projectId} — unexpected error: ${err.message}`);
+      cancelSheetCreationJob(projectId);
+    }
+  };
+
+  // First retry after 30s (give Google time to refresh quota)
+  job.timer = setTimeout(attempt, 30_000);
+  console.log(`[SheetBG] Started background job for project ${projectId}`);
+}
+
+export async function createProjectSheet(projectId: string, isBackground = false): Promise<{
+  ok: boolean; sheetId?: string; sheetUrl?: string; pending?: boolean; message: string; needsManualId?: boolean;
 }> {
   try {
     const { sheets, proj, auth } = await getSheetsClient(projectId, [

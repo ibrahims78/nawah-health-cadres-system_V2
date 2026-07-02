@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -15,7 +16,6 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp,
   Upload, TableProperties, Wrench, RefreshCw, BotMessageSquare,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import type { Project, ProjectField } from "@shared/schema";
 
 export function ProjectSettings() {
@@ -49,7 +49,19 @@ export function ProjectSettings() {
   const { data: project } = useQuery<any>({
     queryKey: ["/api/projects", id],
     queryFn: () => fetch(`/api/projects/${id}`, { credentials: "include" }).then(r => r.json()),
+    // Poll every 20s while sheet creation is pending (TanStack Query v5 signature)
+    refetchInterval: (query: any) => query.state.data?.sheetCreationPending ? 20_000 : false,
   });
+
+  // Auto-clear testResult and show success when Sheet ID appears after pending
+  const prevSheetPending = useRef(false);
+  useEffect(() => {
+    if (prevSheetPending.current && project?.googleSheetId && !project?.sheetCreationPending) {
+      setTestResult("✅ تم إنشاء الـ Sheet تلقائياً بنجاح!");
+      setCreatedSheetUrl(`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`);
+    }
+    prevSheetPending.current = !!project?.sheetCreationPending;
+  }, [project?.sheetCreationPending, project?.googleSheetId]);
 
   const { data: rawFields = [] } = useQuery<ProjectField[]>({
     queryKey: ["/api/projects", id, "fields"],
@@ -460,17 +472,35 @@ export function ProjectSettings() {
 
             {/* Connection status */}
             <Card className="p-4 flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${project?.hasGoogleKey ? "bg-green-500" : "bg-slate-300"}`} />
+              <div className={`w-3 h-3 rounded-full shrink-0 ${
+                project?.sheetCreationPending ? "bg-amber-400 animate-pulse" :
+                project?.hasGoogleKey && project?.googleSheetId ? "bg-green-500" :
+                project?.hasGoogleKey ? "bg-blue-400" : "bg-slate-300"
+              }`} />
               <div className="flex-1">
                 <p className="text-sm font-medium">{project?.hasGoogleKey ? "مفتاح Google محفوظ ✓" : "لم يتم رفع مفتاح Google"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {project?.googleSheetId ? "Sheet مرتبط ✓ — جاهز للاستخدام" : "لم يتم إنشاء Sheet بعد"}
+                  {project?.sheetCreationPending
+                    ? "⏳ جارٍ إنشاء الـ Sheet تلقائياً في الخلفية..."
+                    : project?.googleSheetId ? "Sheet مرتبط ✓ — جاهز للاستخدام"
+                    : "لم يتم إنشاء Sheet بعد"}
                 </p>
               </div>
-              {project?.hasGoogleKey && project?.googleSheetId && (
+              {project?.sheetCreationPending && (
+                <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse">جارٍ الإنشاء</Badge>
+              )}
+              {!project?.sheetCreationPending && project?.hasGoogleKey && project?.googleSheetId && (
                 <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">جاهز</Badge>
               )}
             </Card>
+
+            {/* Pending banner */}
+            {project?.sheetCreationPending && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs">
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                <span>النظام يحاول إنشاء الـ Sheet تلقائياً — سيتحدث الصفحة عند الاكتمال. لا تحتاج لفعل أي شيء.</span>
+              </div>
+            )}
 
             {/* Connection form */}
             <form onSubmit={handleSubmit(d => saveMut.mutate(d))}>

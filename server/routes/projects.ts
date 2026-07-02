@@ -4,7 +4,7 @@ import { projects, projectFields, projectRecords, projectAuditLog, users, userIn
 import { eq, desc, count, gte, and, ilike, or, gt, sql } from "drizzle-orm";
 import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/auth.js";
 import { encrypt, decrypt } from "../services/crypto.js";
-import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, createProjectSheet, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet } from "../services/projectSheets.js";
+import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, createProjectSheet, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, isSheetCreationPending, startBackgroundSheetCreation, cancelSheetCreationJob } from "../services/projectSheets.js";
 import { testTelegramBot, getTelegramUpdates } from "../services/telegram.js";
 import { sendInvitationEmail, testEmailConnection } from "../services/email.js";
 import { v4 as uuidv4 } from "uuid";
@@ -35,6 +35,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       ...safe,
       hasGoogleKey: !!googleServiceAccountKeyEnc,
       hasTelegramToken: !!telegramBotTokenEnc,
+      sheetCreationPending: isSheetCreationPending(String(req.params.id)),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -611,7 +612,18 @@ router.post("/:id/test-sheets", requireAdmin, async (req: Request, res: Response
 });
 
 router.post("/:id/create-sheet", requireAdmin, async (req: Request, res: Response) => {
-  const result = await createProjectSheet(String(req.params.id));
+  const projectId = String(req.params.id);
+  cancelSheetCreationJob(projectId); // cancel any running background job first
+  const result = await createProjectSheet(projectId);
+  // If quota error — start background retry loop and return pending immediately
+  if (!result.ok && result.message && /quota/i.test(result.message)) {
+    startBackgroundSheetCreation(projectId);
+    return res.json({
+      ok: true,
+      pending: true,
+      message: "⏳ حصة Drive الـ SA تحتاج وقتاً للتحديث — بدأ النظام إنشاء الـ Sheet تلقائياً في الخلفية.\nسيُحدَّث الـ ID تلقائياً خلال دقيقة إلى عشر دقائق.",
+    });
+  }
   res.json(result);
 });
 
