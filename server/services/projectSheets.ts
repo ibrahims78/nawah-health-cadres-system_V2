@@ -520,31 +520,53 @@ export async function createProjectSheet(projectId: string, isBackground = false
         }
       }
     } else {
-      // No folder specified — create via Drive API (more permissive than sheets.spreadsheets.create)
+      // No folder specified — create via Drive API
+      const doCreate = async () => drive.files.create({
+        requestBody: {
+          name: proj.name || sheetName,
+          mimeType: "application/vnd.google-apps.spreadsheet",
+        },
+        fields: "id",
+      } as any);
+
       try {
-        const driveFile = await drive.files.create({
-          requestBody: {
-            name: proj.name || sheetName,
-            mimeType: "application/vnd.google-apps.spreadsheet",
-          },
-          fields: "id",
-        } as any);
+        const driveFile = await doCreate();
         spreadsheetId = driveFile.data.id!;
         console.log("[ProjectSheets] Drive create (no-folder) OK — id:", spreadsheetId);
-      } catch (driveNoFolderErr: any) {
-        const hint = classifyDriveError(driveNoFolderErr, { saEmail: proj.googleServiceAccountEmail ?? "" });
-        console.error("[ProjectSheets] Drive create (no-folder) failed:", hint);
-        console.error("[ProjectSheets] Full error:", JSON.stringify(driveNoFolderErr?.response?.data ?? driveNoFolderErr?.message));
-        // Fall back to Sheets API as last resort
-        console.log("[ProjectSheets] Falling back to sheets.spreadsheets.create()...");
-        const newSheet = await sheets.spreadsheets.create({
-          requestBody: {
-            properties: { title: proj.name || sheetName },
-            sheets: [{ properties: { title: sheetName } }],
-          },
-        });
-        spreadsheetId = newSheet.data.spreadsheetId!;
-        console.log("[ProjectSheets] Sheets fallback create OK — id:", spreadsheetId);
+      } catch (driveErr1: any) {
+        const reason1 = googleErrorReason(driveErr1);
+        const isQuota1 = reason1 === "storageQuotaExceeded" || reason1 === "storageQuota" || /storagequota/i.test(reason1);
+        console.error("[ProjectSheets] Drive create (no-folder) failed:", driveErr1.message, "| reason:", reason1);
+
+        if (isQuota1) {
+          // Empty trash to free space, then retry once
+          console.log("[ProjectSheets] Quota exceeded (no-folder) — emptying trash...");
+          try { await drive.files.emptyTrash(); console.log("[ProjectSheets] Trash emptied OK"); }
+          catch (te: any) { console.warn("[ProjectSheets] emptyTrash failed:", te.message); }
+
+          try {
+            const driveFile2 = await doCreate();
+            spreadsheetId = driveFile2.data.id!;
+            console.log("[ProjectSheets] Drive create (after trash empty) OK — id:", spreadsheetId);
+          } catch (driveErr2: any) {
+            const reason2 = googleErrorReason(driveErr2);
+            console.error("[ProjectSheets] Drive create retry failed:", driveErr2.message, "| reason:", reason2);
+            return {
+              ok: false,
+              needsManualId: true,
+              message:
+                "❌ حصة تخزين Drive الـ Service Account ممتلئة ولم يساعد تفريغ سلة المهملات.\n\n" +
+                "الحل الأسرع:\n" +
+                "① أنشئ ملف Google Sheet يدوياً من حساب Google عادي.\n" +
+                "② شارك الملف مع (" + (proj.googleServiceAccountEmail ?? "بريد الـ SA") + ") كـ «محرر».\n" +
+                "③ أدخل الـ Sheet ID يدوياً في الحقل أدناه.",
+            };
+          }
+        } else {
+          // Non-quota error — surface the classified message
+          const hint1 = classifyDriveError(driveErr1, { saEmail: proj.googleServiceAccountEmail ?? "" });
+          return { ok: false, message: `❌ ${hint1}` };
+        }
       }
 
       // Rename default tab to sheetName if needed
