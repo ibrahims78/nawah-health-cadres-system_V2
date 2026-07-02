@@ -28,6 +28,20 @@ router.get("/", requireAuth, async (_req, res) => {
 
 // ─── STATIC ROUTES (must come before /:id to avoid shadowing) ───
 
+// Public branding endpoint — no auth required (returns only safe display fields)
+router.get("/app-info", async (_req, res) => {
+  try {
+    const [s] = await db.select({
+      appName: systemSettings.appName,
+      appLogoUrl: systemSettings.appLogoUrl,
+      defaultLanguage: systemSettings.defaultLanguage,
+    }).from(systemSettings).where(eq(systemSettings.id, "singleton"));
+    res.json(s ?? { appName: "مسار" });
+  } catch {
+    res.json({ appName: "مسار" });
+  }
+});
+
 router.get("/global-settings", requireAdmin, async (_req, res) => {
   try {
     const [s] = await db.select().from(systemSettings).where(eq(systemSettings.id, "singleton"));
