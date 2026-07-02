@@ -6,9 +6,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "SERVER_PORT=3001 tsx watch server/index.ts",
     "client": "vite --host 0.0.0.0",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=cjs --outfile=dist/index.cjs",
     "db:push": "drizzle-kit push",
-    "start": "NODE_ENV=production node dist/server/index.js"
+    "start": "NODE_ENV=production node dist/index.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

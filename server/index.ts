@@ -20,8 +20,10 @@ if (!process.env.SESSION_SECRET) {
   process.exit(1);
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir =
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = parseInt(process.env.SERVER_PORT || process.env.PORT || "3001");
@@ -81,7 +83,7 @@ app.use("/api/pform", pformRoutes);
 app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 // Serve frontend in production
-const clientDist = path.join(__dirname, "..", "client");
+const clientDist = path.join(currentDir, "client");
 if (existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get("*", (_req, res) => {
