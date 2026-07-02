@@ -38,6 +38,22 @@ function sheetRange(name: string, range: string): string {
   return `'${escaped}'!${range}`;
 }
 
+/** Ensure the named sheet tab exists in the spreadsheet; creates it if missing. */
+async function ensureSheetTab(sheets: any, spreadsheetId: string, sheetName: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets || []).some(
+    (s: any) => s.properties?.title === sheetName
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
+      },
+    });
+  }
+}
+
 // Ensure header row exists with all field labels
 async function ensureHeaders(sheets: any, spreadsheetId: string, sheetName: string, fields: any[]) {
   const headers = ["م", ...fields.map(f => f.label)];
@@ -64,6 +80,7 @@ export async function appendRecordToSheet(projectId: string, recordData: Record<
     const fields = await getProjectFields(projectId);
     const sheetName = proj.googleSheetName || "بيانات";
 
+    await ensureSheetTab(sheets, proj.googleSheetId, sheetName);
     await ensureHeaders(sheets, proj.googleSheetId, sheetName, fields);
 
     const row = [String(seqNum), ...fields.map(f => String(recordData[f.key] ?? ""))];
@@ -206,6 +223,7 @@ export async function createProjectSheet(projectId: string): Promise<{
         .where(eq(projects.id, projectId));
     }
 
+    await ensureSheetTab(sheets, spreadsheetId, sheetName);
     await ensureHeaders(sheets, spreadsheetId, sheetName, fields);
 
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
