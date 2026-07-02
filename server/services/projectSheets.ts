@@ -182,10 +182,15 @@ export async function createProjectSheet(projectId: string): Promise<{
     const sheetName = proj.googleSheetName || proj.name || "بيانات";
     const drive = google.drive({ version: "v3", auth });
 
+    // Accept either a full Drive URL or a bare folder ID
+    const rawFolder = proj.googleDriveFolderId || "";
+    const folderIdMatch = rawFolder.match(/folders\/([a-zA-Z0-9_-]+)/);
+    const folderId = folderIdMatch ? folderIdMatch[1] : rawFolder.trim();
+
     let spreadsheetId: string;
     let inFolder = false;
 
-    if (proj.googleDriveFolderId) {
+    if (folderId) {
       // Create file DIRECTLY inside the target folder — no move needed, no permission issues
       const driveFile = await drive.files.create({
         requestBody: {

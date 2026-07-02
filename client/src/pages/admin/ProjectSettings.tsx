@@ -474,10 +474,23 @@ export function ProjectSettings() {
                     Google Drive Folder ID
                     <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600">اختياري</Badge>
                   </Label>
-                  <Input {...register("googleDriveFolderId")} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" dir="ltr" data-testid="input-googleDriveFolderId" />
+                  <Input
+                    {...register("googleDriveFolderId")}
+                    placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms أو الرابط كاملاً"
+                    dir="ltr"
+                    data-testid="input-googleDriveFolderId"
+                    onPaste={e => {
+                      const pasted = e.clipboardData.getData("text");
+                      const m = pasted.match(/folders\/([a-zA-Z0-9_-]+)/);
+                      if (m) {
+                        e.preventDefault();
+                        setValue("googleDriveFolderId", m[1]);
+                      }
+                    }}
+                  />
                   <p className="text-[11px] text-muted-foreground">
-                    من رابط المجلد في Drive: drive.google.com/drive/folders/<strong>FOLDER_ID</strong>
-                    {" — "}يجب مشاركة المجلد مع بريد الـ Service Account كـ "محرر"
+                    يمكنك لصق رابط المجلد كاملاً أو الـ ID فقط — سيُستخرج تلقائياً.
+                    يجب مشاركة المجلد مع بريد الـ Service Account كـ "محرر"
                   </p>
                 </div>
 
