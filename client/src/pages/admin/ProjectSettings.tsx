@@ -460,7 +460,9 @@ export function ProjectSettings() {
               <div className={`w-3 h-3 rounded-full ${project?.hasGoogleKey ? "bg-green-500" : "bg-slate-300"}`} />
               <div className="flex-1">
                 <p className="text-sm font-medium">{project?.hasGoogleKey ? "مفتاح Google محفوظ ✓" : "لم يتم رفع مفتاح Google"}</p>
-                <p className="text-xs text-muted-foreground">{project?.googleSheetId ? `Sheet: ${project.googleSheetId.slice(0, 24)}...` : "لم يتم إدخال Sheet ID"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {project?.googleSheetId ? "Sheet مرتبط ✓ — جاهز للاستخدام" : "لم يتم إنشاء Sheet بعد"}
+                </p>
               </div>
               {project?.hasGoogleKey && project?.googleSheetId && (
                 <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">جاهز</Badge>
@@ -535,20 +537,21 @@ export function ProjectSettings() {
                   <Input {...register("googleSheetName")} placeholder="بيانات" data-testid="input-googleSheetName" />
                 </div>
 
-                {/* Sheet ID — auto-filled, read-only display */}
+                {/* Sheet status — auto-managed, show open link only */}
                 {project?.googleSheetId && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1.5">
-                      Sheet ID
-                      <Badge variant="secondary" className="text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30">تم إنشاؤه تلقائياً ✓</Badge>
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <Input value={project.googleSheetId} readOnly dir="ltr" className="font-mono text-xs bg-slate-50 dark:bg-slate-800 text-muted-foreground cursor-default" data-testid="input-googleSheetId" />
-                      <a href={`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`} target="_blank" rel="noopener noreferrer" className="shrink-0" title="فتح الـ Sheet">
-                        <ExternalLink className="h-4 w-4 text-blue-500 hover:text-blue-700" />
-                      </a>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">هذا الـ ID تم حفظه تلقائياً بعد الإنشاء. يمكنك فتح الملف بالأيقونة.</p>
+                  <div className="flex items-center gap-2 p-2.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                    <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                    <span className="text-xs text-green-700 dark:text-green-400 flex-1">Google Sheet جاهز ومرتبط بالمشروع ✓</span>
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                      data-testid="link-open-sheet-status"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      فتح الملف
+                    </a>
                   </div>
                 )}
 

@@ -300,10 +300,11 @@ export async function createProjectSheet(projectId: string): Promise<{
               };
             }
           } else {
-            // File was deleted — clear stored ID and fall through to fresh creation below
-            console.log("[ProjectSheets] Stored sheet ID not found (deleted) — clearing and creating fresh...");
+            // File was deleted — clear stored ID, empty trash to free quota, then create fresh
+            console.log("[ProjectSheets] Stored sheet ID deleted — clearing ID and emptying trash...");
             await db.update(projects).set({ googleSheetId: null }).where(eq(projects.id, projectId));
-            // Fall through to Sheets API creation attempt
+            try { await drive.files.emptyTrash(); console.log("[ProjectSheets] Trash emptied OK"); } catch (te: any) { console.warn("[ProjectSheets] emptyTrash:", te.message); }
+            // Now attempt fresh creation
             try {
               const newSheet = await sheets.spreadsheets.create({
                 requestBody: {
@@ -312,18 +313,19 @@ export async function createProjectSheet(projectId: string): Promise<{
                 },
               });
               spreadsheetId = newSheet.data.spreadsheetId!;
-              console.log("[ProjectSheets] Fresh Sheets API create OK — id:", spreadsheetId);
+              console.log("[ProjectSheets] Fresh create OK — id:", spreadsheetId);
               inFolder = await moveFileToFolder(spreadsheetId);
               if (!inFolder) {
                 folderNote = `\n(ملاحظة: الملف أُنشئ لكن تعذّر نقله للمجلد. تأكد من مشاركة المجلد مع ${proj.googleServiceAccountEmail} كـ "محرر")`;
               }
             } catch (sheetsErr: any) {
-              return { ok: false, message: `❌ حصة Drive لا تزال ممتلئة حتى بعد حذف الملف القديم.\n\nيرجى تنظيف Drive الـ SA يدوياً أو استخدام Service Account مختلف.` };
+              return { ok: false, message: `❌ حصة Drive لا تزال ممتلئة بعد تفريغ سلة المهملات.\n\nالسبب: ${sheetsErr.message}` };
             }
           }
         } else if (isQuotaErr && !proj.googleSheetId) {
-          // ── Attempt 2B: Quota + no stored sheet — try Sheets API (may bypass quota) ──
-          console.log("[ProjectSheets] Quota error, no stored sheet — trying Sheets API create...");
+          // ── Attempt 2B: Quota + no stored sheet — empty trash first, then Sheets API ──
+          console.log("[ProjectSheets] Quota error, no stored sheet — emptying trash and retrying...");
+          try { await drive.files.emptyTrash(); console.log("[ProjectSheets] Trash emptied OK"); } catch (te: any) { console.warn("[ProjectSheets] emptyTrash:", te.message); }
           try {
             const newSheet = await sheets.spreadsheets.create({
               requestBody: {
@@ -338,7 +340,7 @@ export async function createProjectSheet(projectId: string): Promise<{
               folderNote = `\n(ملاحظة: الملف في Drive الـ SA — تعذّر نقله للمجلد. تأكد من مشاركة المجلد مع ${proj.googleServiceAccountEmail} كـ "محرر")`;
             }
           } catch (sheetsErr: any) {
-            return { ok: false, message: `❌ ${hint}\n\nتفاصيل: ${sheetsErr.message}` };
+            return { ok: false, message: `❌ ${hint}\n\nبعد تفريغ سلة المهملات لا يزال الإنشاء يفشل.\nالسبب: ${sheetsErr.message}` };
           }
         } else if (!isQuotaErr) {
           // Non-quota error (permission/not found) — return immediately with hint
@@ -577,7 +579,6 @@ export async function cleanupServiceAccountDrive(projectId: string): Promise<{
 
     for (const file of allFiles) {
       if (!file.id) continue;
-      // Protect any sheet linked to a project
       if (knownSheetIds.has(file.id)) {
         console.log("[ProjectSheets] cleanup protected:", file.id, file.name);
         skipped++;
@@ -593,13 +594,23 @@ export async function cleanupServiceAccountDrive(projectId: string): Promise<{
       }
     }
 
+    // Always empty trash to free up any deleted files still consuming quota
+    let trashNote = "";
+    try {
+      await drive.files.emptyTrash();
+      trashNote = " + سلة المهملات فُرِّغت";
+      console.log("[ProjectSheets] Trash emptied successfully");
+    } catch (te: any) {
+      console.warn("[ProjectSheets] emptyTrash failed:", te.message);
+    }
+
     const found = allFiles.length;
     return {
       ok: true,
       found,
       deleted,
       skipped,
-      message: `✅ تم التنظيف: فحص ${found} ملف، حُذف ${deleted}، تجاوز ${skipped} محمي`,
+      message: `✅ تم التنظيف: فحص ${found} ملف، حُذف ${deleted}، تجاوز ${skipped} محمي${trashNote}`,
     };
   } catch (err: any) {
     console.error("[ProjectSheets] cleanupServiceAccountDrive error:", err.message);
