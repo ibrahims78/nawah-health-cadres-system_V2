@@ -13,6 +13,7 @@ import {
   FileText, Building2, Copy, Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLang } from "@/context/LanguageContext";
 import type { ProjectField } from "@shared/schema";
 
 const STEP_ICONS = [Shield, User, Briefcase, Building2, MapPin, ClipboardCheck, FileText];
@@ -27,6 +28,8 @@ interface FormInfo {
 
 export function ProjectRegister() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { lang } = useLang();
+  const isAr = lang === "ar";
   const [step, setStep] = useState(0);
   const [codeVerified, setCodeVerified] = useState(false);
   const [codeSkipped, setCodeSkipped] = useState(false);
@@ -50,7 +53,7 @@ export function ProjectRegister() {
 
   const project = formInfo?.project;
   const fields = formInfo?.fields || [];
-  const steps = project?.steps || ["التسجيل"];
+  const steps = project?.steps || [isAr ? "التسجيل" : "Registration"];
   const totalSteps = steps.length;
 
   useEffect(() => {
@@ -84,8 +87,8 @@ export function ProjectRegister() {
       });
       const data = await res.json();
       if (res.ok) { setCodeVerified(true); }
-      else { setCodError(data.error || "رمز الدعوة غير صحيح"); }
-    } catch { setCodError("حدث خطأ. حاول مجدداً."); }
+      else { setCodError(data.error || (isAr ? "رمز الدعوة غير صحيح" : "Invalid invitation code")); }
+    } catch { setCodError(isAr ? "حدث خطأ. حاول مجدداً." : "An error occurred. Please try again."); }
     setVerifying(false);
   };
 
@@ -121,7 +124,7 @@ export function ProjectRegister() {
   const printReport = () => {
     const vals = getValues();
     const printSteps = steps.slice(0, -1);
-    const date = new Date().toLocaleDateString("ar-SY", { year: "numeric", month: "long", day: "numeric" });
+    const date = new Date().toLocaleDateString(isAr ? "ar-SY" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
     const sectionsHtml = printSteps.map((stepName, si) => {
       const stepFields = getStepFields(si + 1);
@@ -147,10 +150,10 @@ export function ProjectRegister() {
     }).join("");
 
     const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="${isAr ? "ar" : "en"}" dir="${isAr ? "rtl" : "ltr"}">
 <head>
   <meta charset="UTF-8"/>
-  <title>تقرير بيانات — ${project?.formTitle || ""}</title>
+  <title>${isAr ? "تقرير بيانات" : "Data Report"} — ${project?.formTitle || ""}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -159,7 +162,7 @@ export function ProjectRegister() {
       font-size: 11pt;
       color: #1e293b;
       background: #fff;
-      direction: rtl;
+      direction: ${isAr ? "rtl" : "ltr"};
     }
     .page { max-width: 210mm; margin: 0 auto; padding: 12mm 15mm; }
 
@@ -183,7 +186,7 @@ export function ProjectRegister() {
     }
     .report-title { font-size: 16pt; font-weight: 900; color: #1d4ed8; line-height: 1.3; }
     .report-subtitle { font-size: 9pt; color: #64748b; margin-top: 2px; }
-    .report-meta { text-align: left; font-size: 9pt; color: #64748b; line-height: 1.8; }
+    .report-meta { text-align: ${isAr ? "left" : "right"}; font-size: 9pt; color: #64748b; line-height: 1.8; }
     .report-meta strong { color: #1e293b; }
 
     /* ── Status bar ── */
@@ -240,7 +243,7 @@ export function ProjectRegister() {
       font-size: 9.5pt;
       color: #475569;
       border-bottom: 1px solid #e2e8f0;
-      border-left: 1px solid #e2e8f0;
+      border-${isAr ? "left" : "right"}: 1px solid #e2e8f0;
       font-weight: 500;
     }
     .value-cell {
@@ -288,22 +291,22 @@ export function ProjectRegister() {
   <!-- Header -->
   <div class="report-header">
     <div class="report-header-right">
-      <div class="logo-circle">م</div>
+      <div class="logo-circle">${isAr ? "م" : "M"}</div>
       <div>
-        <div class="report-title">${project?.formTitle || "نموذج التسجيل"}</div>
-        <div class="report-subtitle">${project?.formSubtitle || "منصة مسارات"}</div>
+        <div class="report-title">${project?.formTitle || (isAr ? "نموذج التسجيل" : "Registration Form")}</div>
+        <div class="report-subtitle">${project?.formSubtitle || (isAr ? "منصة مسارات" : "Masarat Platform")}</div>
       </div>
     </div>
     <div class="report-meta">
-      <div>تاريخ الطباعة: <strong>${date}</strong></div>
-      <div>الحالة: <strong style="color:#15803d">في انتظار الإرسال</strong></div>
+      <div>${isAr ? "تاريخ الطباعة" : "Print Date"}: <strong>${date}</strong></div>
+      <div>${isAr ? "الحالة" : "Status"}: <strong style="color:#15803d">${isAr ? "في انتظار الإرسال" : "Pending Submission"}</strong></div>
     </div>
   </div>
 
   <!-- Status -->
   <div class="status-bar">
     <div class="status-dot"></div>
-    تقرير مراجعة البيانات — يُرجى التحقق من صحة جميع المعلومات قبل الإرسال النهائي
+    ${isAr ? "تقرير مراجعة البيانات — يُرجى التحقق من صحة جميع المعلومات قبل الإرسال النهائي" : "Data Review Report — Please verify all information before final submission"}
   </div>
 
   <!-- Sections -->
@@ -312,12 +315,12 @@ export function ProjectRegister() {
   <!-- Footer -->
   <div class="report-footer">
     <div>
-      <div>هذا التقرير تم إنشاؤه تلقائياً بتاريخ ${date}</div>
-      <div style="margin-top:3px">منصة مسارات — إدارة نماذج التسجيل والبيانات</div>
+      <div>${isAr ? `هذا التقرير تم إنشاؤه تلقائياً بتاريخ ${date}` : `This report was automatically generated on ${date}`}</div>
+      <div style="margin-top:3px">${isAr ? "منصة مسارات — إدارة نماذج التسجيل والبيانات" : "Masarat Platform — Forms & Data Management"}</div>
     </div>
     <div class="signature-box">
-      توقيع المسؤول
-      <div class="sig-line">التوقيع والختم</div>
+      ${isAr ? "توقيع المسؤول" : "Authorized Signature"}
+      <div class="sig-line">${isAr ? "التوقيع والختم" : "Signature & Stamp"}</div>
     </div>
   </div>
 
@@ -344,24 +347,24 @@ export function ProjectRegister() {
 
       {f.fieldType === "textarea" ? (
         <Textarea
-          {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
           placeholder={f.placeholder || ""}
           rows={3}
           data-testid={`input-${f.key}`}
         />
       ) : f.fieldType === "select" && f.options ? (
         <select
-          {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
           className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition"
           data-testid={`select-${f.key}`}>
-          <option value="">— اختر —</option>
+          <option value="">{isAr ? "— اختر —" : "— Select —"}</option>
           {(f.options as string[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
       ) : f.fieldType === "radio" && f.options ? (
         <div className="flex flex-wrap gap-3 pt-1">
           {(f.options as string[]).map(opt => (
             <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-primary/50 transition">
-              <input type="radio" {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+              <input type="radio" {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
                 value={opt} className="accent-primary w-3.5 h-3.5" />
               <span>{opt}</span>
             </label>
@@ -369,7 +372,7 @@ export function ProjectRegister() {
         </div>
       ) : (
         <Input
-          {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
           type={
             f.fieldType === "number" ? "number" :
             f.fieldType === "date" ? "date" :
@@ -400,32 +403,32 @@ export function ProjectRegister() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 p-4">
       <Card className="p-8 max-w-sm w-full text-center space-y-3">
         <Shield className="h-12 w-12 text-slate-300 mx-auto" />
-        <h2 className="text-lg font-bold">{project?.formDisabledMessage || "النموذج متوقف مؤقتاً"}</h2>
+        <h2 className="text-lg font-bold">{project?.formDisabledMessage || (isAr ? "النموذج متوقف مؤقتاً" : "Form is temporarily disabled")}</h2>
       </Card>
     </div>
   );
 
   /* ─── Submitted ─── */
   if (submitted) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 p-4" dir="rtl">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 p-4" dir={isAr ? "rtl" : "ltr"}>
       <Card className="p-8 max-w-sm w-full text-center space-y-5">
         <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto">
           <CheckCircle className="h-12 w-12 text-green-500" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">تم التسجيل بنجاح!</h2>
-          <p className="text-sm text-muted-foreground mt-1">شكراً لك على تعبئة النموذج</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{isAr ? "تم التسجيل بنجاح!" : "Registration Successful!"}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{isAr ? "شكراً لك على تعبئة النموذج" : "Thank you for filling out the form"}</p>
         </div>
         <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-2">
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">رابط التعديل الخاص بك</p>
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">{isAr ? "رابط التعديل الخاص بك" : "Your personal edit link"}</p>
           <p className="text-[11px] font-mono break-all text-slate-500 dark:text-slate-400 text-left leading-relaxed">
             {`${window.location.origin}/p/${projectId}/edit/${editToken}`}
           </p>
-          <p className="text-[11px] text-muted-foreground">صالح لمدة {tokenHours} ساعة</p>
+          <p className="text-[11px] text-muted-foreground">{isAr ? `صالح لمدة ${tokenHours} ساعة` : `Valid for ${tokenHours} hours`}</p>
         </div>
         <Button onClick={copyLink} className="w-full gap-2" variant={copied ? "secondary" : "default"} data-testid="button-copy-link">
           {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          {copied ? "تم النسخ!" : "نسخ رابط التعديل"}
+          {copied ? (isAr ? "تم النسخ!" : "Copied!") : (isAr ? "نسخ رابط التعديل" : "Copy edit link")}
         </Button>
       </Card>
     </div>
@@ -433,7 +436,7 @@ export function ProjectRegister() {
 
   /* ─── Invitation code screen ─── */
   if (!codeVerified) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 p-4" dir="rtl">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 p-4" dir={isAr ? "rtl" : "ltr"}>
       <Card className="p-8 max-w-sm w-full space-y-5 shadow-xl">
         <div className="text-center space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
@@ -443,7 +446,7 @@ export function ProjectRegister() {
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{project.formTitle}</h1>
             {project.formSubtitle && <p className="text-sm text-muted-foreground mt-1">{project.formSubtitle}</p>}
           </div>
-          <p className="text-sm text-muted-foreground">أدخل رمز الدعوة للوصول إلى النموذج</p>
+          <p className="text-sm text-muted-foreground">{isAr ? "أدخل رمز الدعوة للوصول إلى النموذج" : "Enter invitation code to access the form"}</p>
         </div>
         <Input
           value={invitationCode}
@@ -460,7 +463,7 @@ export function ProjectRegister() {
         )}
         <Button className="w-full h-12 text-base gap-2" onClick={verifyCode} disabled={verifying} data-testid="button-verify-code">
           {verifying ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />}
-          دخول
+          {isAr ? "دخول" : "Enter"}
         </Button>
       </Card>
     </div>
@@ -472,7 +475,7 @@ export function ProjectRegister() {
   const allValues = getValues();
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col" dir="rtl">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col" dir={isAr ? "rtl" : "ltr"}>
 
       {/* ══ Fixed top area (header + stepper) ══ */}
       <div ref={headerRef} className="fixed top-0 inset-x-0 z-50">
@@ -482,7 +485,7 @@ export function ProjectRegister() {
           <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-3">
             {/* Step badge */}
             <span className="bg-primary/10 text-primary text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap">
-              الخطوة {step + 1} من {totalSteps}
+              {isAr ? `الخطوة ${step + 1} من ${totalSteps}` : `Step ${step + 1} of ${totalSteps}`}
             </span>
             {/* Title */}
             <p className="flex-1 text-sm font-bold text-slate-800 dark:text-slate-100 text-center truncate">
@@ -506,7 +509,11 @@ export function ProjectRegister() {
               {/* Progress line */}
               <div
                 className="absolute top-[18px] right-5 h-0.5 bg-primary transition-all duration-500"
-                style={{ width: totalSteps > 1 ? `calc(${(step / (totalSteps - 1)) * 100}% * (100% - 40px) / 100%)` : "0%" }}
+                style={{
+                  width: totalSteps > 1 ? `calc(${(step / (totalSteps - 1)) * 100}% * (100% - 40px) / 100%)` : "0%",
+                  [isAr ? "right" : "left"]: "20px",
+                  [isAr ? "left" : "right"]: "auto"
+                }}
               />
               {steps.map((s, i) => {
                 const Icon = STEP_ICONS[i % STEP_ICONS.length];
@@ -540,12 +547,12 @@ export function ProjectRegister() {
             <div className="flex items-center gap-3 mt-3">
               <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-l from-primary to-primary/70 rounded-full transition-all duration-500"
+                  className={cn("h-full bg-gradient-to-l from-primary to-primary/70 rounded-full transition-all duration-500", !isAr && "bg-gradient-to-r")}
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
               <span className="text-[11px] text-muted-foreground font-semibold whitespace-nowrap">
-                الخطوة {step + 1} من {totalSteps} — {progressPercent}% مكتمل
+                {isAr ? `الخطوة ${step + 1} من ${totalSteps} — ${progressPercent}% مكتمل` : `Step ${step + 1} of ${totalSteps} — ${progressPercent}% complete`}
               </span>
             </div>
           </div>
@@ -566,8 +573,8 @@ export function ProjectRegister() {
                     <ClipboardCheck className="h-5 w-5 text-green-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h2 className="font-bold text-slate-800 dark:text-slate-100">مراجعة وتعديل البيانات</h2>
-                    <p className="text-xs text-muted-foreground">راجع بياناتك قبل الإرسال النهائي، واضغط "تعديل" لتغيير أي قسم</p>
+                    <h2 className="font-bold text-slate-800 dark:text-slate-100">{isAr ? "مراجعة وتعديل البيانات" : "Review & Edit Data"}</h2>
+                    <p className="text-xs text-muted-foreground">{isAr ? "راجع بياناتك قبل الإرسال النهائي، واضغط \"تعديل\" لتغيير أي قسم" : "Review your data before final submission, and click \"Edit\" to change any section"}</p>
                   </div>
                   <button
                     type="button"
@@ -576,7 +583,7 @@ export function ProjectRegister() {
                     className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 px-3 py-2 rounded-xl transition shadow-sm shrink-0"
                   >
                     <Printer className="h-3.5 w-3.5" />
-                    طباعة التقرير
+                    {isAr ? "طباعة التقرير" : "Print Report"}
                   </button>
                 </div>
 
@@ -602,7 +609,7 @@ export function ProjectRegister() {
                           className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1 transition px-2 py-1 rounded-lg hover:bg-primary/5"
                           data-testid={`button-edit-step-${si}`}
                         >
-                          ✏️ تعديل
+                          {isAr ? "✏️ تعديل" : "✏️ Edit"}
                         </button>
                       </div>
                       {/* Read-only rows */}
@@ -613,7 +620,7 @@ export function ProjectRegister() {
                               key={f.id}
                               className="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-slate-700/60 last:border-0"
                             >
-                              <dt className="text-xs text-muted-foreground w-40 shrink-0 text-right pt-0.5 leading-relaxed">
+                              <dt className={cn("text-xs text-muted-foreground w-40 shrink-0 pt-0.5 leading-relaxed", isAr ? "text-right" : "text-left")}>
                                 {f.label}
                               </dt>
                               <dd className="flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 break-words">
@@ -641,10 +648,15 @@ export function ProjectRegister() {
                   <div>
                     <h2 className="font-bold text-slate-800 dark:text-slate-100">{steps[step]}</h2>
                     <p className="text-xs text-muted-foreground">
-                      {currentStepFields.filter(f => f.isRequired).length > 0
-                        ? `${currentStepFields.filter(f => f.isRequired).length} حقول إلزامية`
-                        : "جميع الحقول اختيارية"
-                      }
+                      {isAr ? (
+                        currentStepFields.filter(f => f.isRequired).length > 0
+                          ? `${currentStepFields.filter(f => f.isRequired).length} حقول إلزامية`
+                          : "جميع الحقول اختيارية"
+                      ) : (
+                        currentStepFields.filter(f => f.isRequired).length > 0
+                          ? `${currentStepFields.filter(f => f.isRequired).length} required fields`
+                          : "All fields are optional"
+                      )}
                     </p>
                   </div>
                 </div>
@@ -656,7 +668,7 @@ export function ProjectRegister() {
                       {currentStepFields.map(f => renderField(f))}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground text-center py-6">لا توجد حقول لهذه الخطوة</p>
+                    <p className="text-sm text-muted-foreground text-center py-6">{isAr ? "لا توجد حقول لهذه الخطوة" : "No fields for this step"}</p>
                   )}
                 </div>
               </Card>
@@ -674,8 +686,8 @@ export function ProjectRegister() {
           {step > 0 ? (
             <Button type="button" variant="outline" onClick={() => setStep(s => s - 1)}
               data-testid="button-prev" className="gap-2 h-11 px-5">
-              <ChevronRight className="h-4 w-4" />
-              رجوع
+              <ChevronRight className={cn("h-4 w-4", !isAr && "rotate-180")} />
+              {isAr ? "رجوع" : "Back"}
             </Button>
           ) : <div />}
 
@@ -691,19 +703,19 @@ export function ProjectRegister() {
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <CheckCircle className="h-4 w-4" />
               }
-              إرسال البيانات
+              {isAr ? "إرسال البيانات" : "Submit Data"}
             </Button>
           ) : fromReview ? (
             <Button type="button" onClick={nextStep}
               data-testid="button-back-to-review" className="gap-2 h-11 px-8 bg-green-600 hover:bg-green-700 text-white">
               <CheckCircle className="h-4 w-4" />
-              العودة للمراجعة
+              {isAr ? "العودة للمراجعة" : "Back to Review"}
             </Button>
           ) : (
             <Button type="button" onClick={nextStep}
               data-testid="button-next" className="gap-2 h-11 px-8">
-              متابعة
-              <ChevronLeft className="h-4 w-4" />
+              {isAr ? "متابعة" : "Continue"}
+              <ChevronLeft className={cn("h-4 w-4", !isAr && "rotate-180")} />
             </Button>
           )}
 

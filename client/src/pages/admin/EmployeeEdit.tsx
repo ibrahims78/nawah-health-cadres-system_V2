@@ -11,10 +11,10 @@ import { Step3Personal } from "@/components/steps/Step3Personal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLang } from "@/context/LanguageContext";
 
-const schema = z.object({
-  firstName: z.string().min(1, "الاسم مطلوب"),
-  familyName: z.string().min(1, "النسبة مطلوبة"),
-  nationalId: z.string().regex(/^\d{11}$/, "الرقم الوطني يجب أن يكون 11 رقماً بالضبط"),
+const schema = (ar: boolean) => z.object({
+  firstName: z.string().min(1, ar ? "الاسم مطلوب" : "First Name is required"),
+  familyName: z.string().min(1, ar ? "النسبة مطلوبة" : "Family Name is required"),
+  nationalId: z.string().regex(/^\d{11}$/, ar ? "الرقم الوطني يجب أن يكون 11 رقماً بالضبط" : "National ID must be exactly 11 digits"),
 }).passthrough();
 
 export function EmployeeEdit() {
@@ -26,7 +26,7 @@ export function EmployeeEdit() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const methods = useForm({ resolver: zodResolver(schema), mode: "onBlur" });
+  const methods = useForm({ resolver: zodResolver(schema(ar)), mode: "onBlur" });
 
   useEffect(() => {
     apiRequest("GET", `/api/admin/employees/${id}`)

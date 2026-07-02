@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
 import { ShieldCheck, Loader2, Eye, EyeOff, LogIn } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -126,7 +127,7 @@ export function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  className={cn("absolute top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors", ar ? "left-3" : "right-3")}
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -164,9 +165,9 @@ export function Login() {
               data-testid="button-login"
             >
               {loading ? (
-                <><Loader2 className="h-5 w-5 animate-spin ml-2" />{ar ? "جاري الدخول..." : "Signing in..."}</>
+                <>{ar ? "جاري الدخول..." : "Signing in..."}<Loader2 className="h-5 w-5 animate-spin ml-2" /></>
               ) : (
-                <><LogIn className="h-5 w-5 ml-2" />{ar ? "تسجيل الدخول" : "Sign In"}</>
+                <>{ar ? "تسجيل الدخول" : "Sign In"}<LogIn className="h-5 w-5 ml-2" /></>
               )}
             </Button>
           </form>
@@ -178,8 +179,8 @@ export function Login() {
           </p>
           <div className="flex flex-col items-center gap-1">
             <p className="text-xs text-slate-400 dark:text-slate-500">
-              تصميم وبرمجة{" "}
-              <span className="font-semibold text-primary/80">إبراهيم الصيداوي</span>
+              {ar ? "تصميم وبرمجة" : "Designed & Developed by"}{" "}
+              <span className="font-semibold text-primary/80">{ar ? "إبراهيم الصيداوي" : "Ibrahim Al-Sidawi"}</span>
             </p>
             <div className="flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
               <a

@@ -85,10 +85,13 @@ const PRESET_INFO = [
   { id: "custom",   icon: "⚙️", label: "مخصص",           labelEn: "Custom",        desc: "اختر الأعمدة يدوياً",                               descEn: "Pick columns manually" },
 ];
 
-function smartDefault() {
+function smartDefault(ar: boolean) {
   const now = new Date();
   const months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-  return `كوادر_صحية_${months[now.getMonth()]}${now.getFullYear()}`;
+  const monthsEn = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return ar 
+    ? `كوادر_صحية_${months[now.getMonth()]}${now.getFullYear()}`
+    : `Health_Staff_${monthsEn[now.getMonth()]}${now.getFullYear()}`;
 }
 
 interface Filters {
@@ -112,7 +115,7 @@ export function Export() {
   const ar = lang === "ar";
 
   // File name
-  const [fileName, setFileName] = useState(smartDefault());
+  const [fileName, setFileName] = useState(smartDefault(ar));
 
   // Filters
   const [filters, setFilters] = useState<Filters>({
@@ -152,7 +155,7 @@ export function Export() {
     queryKey: ["/api/admin/export/preview", filterParams],
     queryFn: async () => {
       const res = await fetch(`/api/admin/export/preview?${filterParams}`, { credentials: "include" });
-      if (!res.ok) throw new Error("فشل جلب المعاينة");
+      if (!res.ok) throw new Error(ar ? "فشل جلب المعاينة" : "Failed to fetch preview");
       return res.json();
     },
     staleTime: 30000,
@@ -175,12 +178,12 @@ export function Export() {
   };
 
   const handleExport = async () => {
-    if (activeCols.length === 0) { alert("اختر عموداً واحداً على الأقل"); return; }
+    if (activeCols.length === 0) { alert(ar ? "اختر عموداً واحداً على الأقل" : "Select at least one column"); return; }
     setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("format", format);
-      params.set("filename", fileName || "كوادر_صحية");
+      params.set("filename", fileName || (ar ? "كوادر_صحية" : "Health_Staff"));
       params.set("columns", activeCols.join(","));
       if (sheetPerGov && format === "xlsx") params.set("sheetPerGov", "true");
       if (filters.governorate) params.set("governorate", filters.governorate);
@@ -192,12 +195,12 @@ export function Export() {
       if (filters.dateTo) params.set("dateTo", filters.dateTo);
 
       const res = await fetch(`/api/admin/export?${params}`, { credentials: "include" });
-      if (!res.ok) throw new Error("فشل التصدير");
+      if (!res.ok) throw new Error(ar ? "فشل التصدير" : "Export failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${fileName || "كوادر_صحية"}.${format}`;
+      a.download = `${fileName || (ar ? "كوادر_صحية" : "Health_Staff")}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {

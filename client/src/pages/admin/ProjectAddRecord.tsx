@@ -20,13 +20,15 @@ function FieldInput({ f, register, errors, watch }: {
   errors: any;
   watch: any;
 }) {
+  const { lang } = useLang();
+  const isAr = lang === "ar";
   const opts = (f.options as string[] | null) || [];
   const val = watch(f.key);
 
   if (f.fieldType === "textarea") {
     return (
       <Textarea
-        {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+        {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
         placeholder={f.placeholder || ""}
         rows={3}
         className="text-sm"
@@ -38,11 +40,11 @@ function FieldInput({ f, register, errors, watch }: {
   if ((f.fieldType === "select") && opts.length > 0) {
     return (
       <select
-        {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+        {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
         className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
         data-testid={`select-${f.key}`}
       >
-        <option value="">— اختر —</option>
+        <option value="">{isAr ? "— اختر —" : "— Select —"}</option>
         {opts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>
     );
@@ -63,7 +65,7 @@ function FieldInput({ f, register, errors, watch }: {
           >
             <input
               type="radio"
-              {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+              {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
               value={opt}
               className="accent-primary"
               data-testid={`radio-${f.key}-${opt}`}
@@ -91,7 +93,7 @@ function FieldInput({ f, register, errors, watch }: {
 
   return (
     <Input
-      {...register(f.key, { required: f.isRequired ? `${f.label} مطلوب` : false })}
+      {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
       type={
         f.fieldType === "number" ? "number"
         : f.fieldType === "date" ? "date"
@@ -111,7 +113,7 @@ export function ProjectAddRecord() {
   const [, nav] = useLocation();
   const qc = useQueryClient();
   const { lang } = useLang();
-  const ar = lang === "ar";
+  const isAr = lang === "ar";
   const [success, setSuccess] = useState(false);
 
   const { data: project } = useQuery<Project>({
@@ -154,10 +156,10 @@ export function ProjectAddRecord() {
         <div className="flex items-center gap-3">
           <Button type="button" variant="ghost" size="sm" onClick={() => nav(`/admin/projects/${id}/records`)}>
             <ArrowRight className="h-4 w-4 ml-1" />
-            {ar ? "السجلات" : "Records"}
+            {isAr ? "السجلات" : "Records"}
           </Button>
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-          <h1 className="text-lg font-bold">{ar ? "إضافة سجل جديد" : "Add New Record"}</h1>
+          <h1 className="text-lg font-bold">{isAr ? "إضافة سجل جديد" : "Add New Record"}</h1>
           <div className="flex-1" />
           <Button
             type="button"
@@ -168,36 +170,36 @@ export function ProjectAddRecord() {
             data-testid="button-submit-and-another"
             className="hidden sm:flex"
           >
-            {ar ? "إضافة وجديد" : "Add & New"}
+            {isAr ? "إضافة وجديد" : "Add & New"}
           </Button>
           <Button type="submit" size="sm" disabled={addMut.isPending} data-testid="button-submit">
             {addMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
-            {ar ? "إضافة" : "Add"}
+            {isAr ? "إضافة" : "Add"}
           </Button>
         </div>
 
         {success && (
           <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm flex items-center gap-2" data-testid="alert-success">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
-            {ar ? "تم إضافة السجل بنجاح" : "Record added successfully"}
+            {isAr ? "تم إضافة السجل بنجاح" : "Record added successfully"}
           </div>
         )}
 
         {addMut.isError && (
           <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
-            {(addMut.error as any)?.message || (ar ? "حدث خطأ أثناء الإضافة" : "An error occurred while adding the record")}
+            {(addMut.error as any)?.message || (isAr ? "حدث خطأ أثناء الإضافة" : "An error occurred while adding the record")}
           </div>
         )}
 
         {stepNums.length === 0 && fields.length === 0 && (
           <Card className="p-10 text-center text-muted-foreground text-sm">
-            {ar ? <>لا يوجد حقول. أضف حقولاً من{" "}<button type="button" className="text-primary underline" onClick={() => nav(`/admin/projects/${id}/settings`)}>إعدادات المشروع</button>{" "}أولاً.</> : <>No fields found. Add fields from{" "}<button type="button" className="text-primary underline" onClick={() => nav(`/admin/projects/${id}/settings`)}>Project Settings</button>{" "}first.</>}
+            {isAr ? <>لا يوجد حقول. أضف حقولاً من{" "}<button type="button" className="text-primary underline" onClick={() => nav(`/admin/projects/${id}/settings`)}>إعدادات المشروع</button>{" "}أولاً.</> : <>No fields found. Add fields from{" "}<button type="button" className="text-primary underline" onClick={() => nav(`/admin/projects/${id}/settings`)}>Project Settings</button>{" "}first.</>}
           </Card>
         )}
 
         {stepNums.map(s => {
           const stepFields = grouped[s] || [];
-          const stepName = steps[s - 1] || (ar ? `الخطوة ${s}` : `Step ${s}`);
+          const stepName = steps[s - 1] || (isAr ? `الخطوة ${s}` : `Step ${s}`);
           return (
             <Card key={s} className="p-5">
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 pb-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
@@ -226,10 +228,10 @@ export function ProjectAddRecord() {
           <div className="flex gap-2">
             <Button type="submit" disabled={addMut.isPending} className="flex-1" data-testid="button-submit-bottom">
               {addMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
-              {addMut.isPending ? (ar ? "جاري الإضافة..." : "Adding...") : (ar ? "إضافة السجل" : "Add Record")}
+              {addMut.isPending ? (isAr ? "جاري الإضافة..." : "Adding...") : (isAr ? "إضافة السجل" : "Add Record")}
             </Button>
             <Button type="button" variant="outline" onClick={() => nav(`/admin/projects/${id}/records`)}>
-              {ar ? "إلغاء" : "Cancel"}
+              {isAr ? "إلغاء" : "Cancel"}
             </Button>
           </div>
         )}

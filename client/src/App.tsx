@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { LanguageProvider } from "@/context/LanguageContext";
+import { LanguageProvider, useLang } from "@/context/LanguageContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ProjectProvider } from "@/context/ProjectContext";
 import { AppSettingsProvider } from "@/context/AppSettingsContext";
@@ -33,6 +33,20 @@ function ProtectedRoute({ children, minRole = "viewer" }: { children: React.Reac
   if (!user) return <Redirect to="/admin/login" />;
   if ((ROLE_LEVEL[user.role] || 0) < (ROLE_LEVEL[minRole] || 0)) return <Redirect to="/admin/projects" />;
   return <>{children}</>;
+}
+
+function NotFound() {
+  const { lang } = useLang();
+  const isAr = lang === "ar";
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-6xl font-bold text-slate-200 dark:text-slate-700 mb-4">404</h1>
+        <p className="text-slate-500">{isAr ? "الصفحة غير موجودة" : "Page not found"}</p>
+        <a href="/admin/projects" className="mt-4 inline-block text-primary hover:underline">{isAr ? "العودة للمشاريع" : "Back to projects"}</a>
+      </div>
+    </div>
+  );
 }
 
 function SetupCheck({ children }: { children: React.ReactNode }) {
@@ -98,15 +112,7 @@ function AppRoutes() {
           <ProtectedRoute minRole="admin"><GlobalSettings /></ProtectedRoute>
         </Route>
 
-        <Route component={() => (
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-center">
-              <h1 className="text-6xl font-bold text-slate-200 dark:text-slate-700 mb-4">404</h1>
-              <p className="text-slate-500">الصفحة غير موجودة</p>
-              <a href="/admin/projects" className="mt-4 inline-block text-primary hover:underline">العودة للمشاريع</a>
-            </div>
-          </div>
-        )} />
+        <Route component={NotFound} />
       </Switch>
     </SetupCheck>
   );

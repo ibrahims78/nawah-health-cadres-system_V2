@@ -69,7 +69,7 @@ export function CreateProject() {
         method: "POST", body: fd, credentials: "include",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل في تحليل الملف");
+      if (!res.ok) throw new Error(data.error || (ar ? "فشل في تحليل الملف" : "Failed to parse file"));
       setColumns(data.columns.map((c: any) => ({ ...c, selected: true })));
       setStep(1);
     } catch (err: any) {
@@ -80,7 +80,7 @@ export function CreateProject() {
 
   const addManualField = () => {
     setColumns(prev => [...prev, {
-      originalLabel: "", label: `حقل ${prev.length + 1}`, key: `field_${prev.length + 1}`,
+      originalLabel: "", label: ar ? `حقل ${prev.length + 1}` : `Field ${prev.length + 1}`, key: `field_${prev.length + 1}`,
       fieldType: "text", isRequired: false, isVisible: true,
       stepNumber: 1, orderIndex: prev.length, samples: [], selected: true,
     }]);
@@ -167,7 +167,7 @@ export function CreateProject() {
               {uploading ? (
                 <div className="space-y-3">
                   <Loader2 className="h-12 w-12 text-primary mx-auto animate-spin" />
-                  <p className="text-sm text-muted-foreground">جاري تحليل الملف...</p>
+                  <p className="text-sm text-muted-foreground">{ar ? "جاري تحليل الملف..." : "Analyzing file..."}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -211,7 +211,7 @@ export function CreateProject() {
                 </p>
               </div>
               {!manualMode && (
-                <Badge variant="secondary">{selectedCount} حقل محدد</Badge>
+                <Badge variant="secondary">{selectedCount} {ar ? "حقل محدد" : "fields selected"}</Badge>
               )}
             </div>
 

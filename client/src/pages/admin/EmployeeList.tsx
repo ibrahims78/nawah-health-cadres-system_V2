@@ -61,7 +61,9 @@ const STATUS_ROW: Record<string, string> = {
 };
 
 const GOVERNORATES = ["دمشق","ريف دمشق","حلب","حمص","حماة","اللاذقية","طرطوس","درعا","السويداء","القنيطرة","دير الزور","الرقة","الحسكة","إدلب"];
+const GOVERNORATES_EN = ["Damascus", "Rif Dimashq", "Aleppo", "Homs", "Hama", "Latakia", "Tartus", "Daraa", "Sweida", "Quneitra", "Deir ez-Zor", "Raqqa", "Hasakah", "Idlib"];
 const JOB_CATEGORIES = ["طبيب","صيدلاني","ممرض","مساعد طبيب","فني","إداري","تمريض","دعم صحي","أخرى"];
+const JOB_CATEGORIES_EN = ["Doctor", "Pharmacist", "Nurse", "Physician Assistant", "Technician", "Administrative", "Nursing", "Health Support", "Other"];
 
 const ALL_COLS = [
   { key: "seq",             label: "م",                    labelEn: "#",                   always: true  },
@@ -127,7 +129,7 @@ function EmployeeDetailDialog({ emp, open, onClose, onEdit, isAdmin, ar }: {
                 {emp.employeeRefId && ` | ${ar ? "الرقم الذاتي" : "Ref. ID"}: ${emp.employeeRefId}`}
               </p>
             </div>
-            {emp.status && <Badge variant={(STATUS_BADGE[emp.status] || "outline") as any}>{emp.status}</Badge>}
+            {emp.status && <Badge variant={(STATUS_BADGE[emp.status] || "outline") as any}>{ar ? emp.status : emp.status}</Badge>}
           </div>
         </DialogHeader>
 
@@ -304,7 +306,7 @@ export function EmployeeList() {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       setImportDialogOpen(true);
     } catch (err: any) {
-      setImportError(err?.message || "فشل الاستيراد");
+      setImportError(err?.message || (ar ? "فشل الاستيراد" : "Import failed"));
       setImportStatus("error");
       localStorage.setItem(IMPORT_KEY, "error");
       setImportDialogOpen(true);
@@ -359,7 +361,7 @@ export function EmployeeList() {
   };
 
   const handleBulkDelete = async () => {
-    if (!selected.length || !confirm(`حذف ${selected.length} سجل؟`)) return;
+    if (!selected.length || !confirm(ar ? `حذف ${selected.length} سجل؟` : `Delete ${selected.length} records?`)) return;
     try {
       await apiRequest("POST", "/api/admin/employees/bulk-delete", { ids: selected });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -404,18 +406,18 @@ export function EmployeeList() {
       case "employeeRefId": return emp.employeeRefId;
       case "maritalStatus": return emp.maritalStatus;
       case "lastQualification": return emp.lastQualification;
-      case "submittedAt": return emp.submittedAt ? new Date(emp.submittedAt).toLocaleDateString("ar-SY") : undefined;
+      case "submittedAt": return emp.submittedAt ? new Date(emp.submittedAt).toLocaleDateString(ar ? "ar-SY" : "en-GB") : undefined;
       default: return undefined;
     }
   };
 
   const filterChips = [
-    { val: qGender, label: `الجنس: ${qGender}`, clear: () => setQGender("") },
-    { val: qStatus && qStatus !== "all" ? qStatus : "", label: `الحالة: ${qStatus}`, clear: () => setQStatus("") },
-    { val: qGov && qGov !== "all" ? qGov : "", label: `المحافظة: ${qGov}`, clear: () => setQGov("") },
-    { val: qEmpStatus && qEmpStatus !== "all" ? qEmpStatus : "", label: `التوظيف: ${qEmpStatus}`, clear: () => setQEmpStatus("") },
-    { val: advJobCat && advJobCat !== "all" ? advJobCat : "", label: `الفئة: ${advJobCat}`, clear: () => setAdvJobCat("") },
-    { val: advOrg1, label: `المستوى الأول: ${advOrg1}`, clear: () => setAdvOrg1("") },
+    { val: qGender, label: ar ? `الجنس: ${qGender}` : `Gender: ${qGender}`, clear: () => setQGender("") },
+    { val: qStatus && qStatus !== "all" ? qStatus : "", label: ar ? `الحالة: ${qStatus}` : `Status: ${qStatus}`, clear: () => setQStatus("") },
+    { val: qGov && qGov !== "all" ? qGov : "", label: ar ? `المحافظة: ${qGov}` : `Governorate: ${qGov}`, clear: () => setQGov("") },
+    { val: qEmpStatus && qEmpStatus !== "all" ? qEmpStatus : "", label: ar ? `التوظيف: ${qEmpStatus}` : `Employment: ${qEmpStatus}`, clear: () => setQEmpStatus("") },
+    { val: advJobCat && advJobCat !== "all" ? advJobCat : "", label: ar ? `الفئة: ${advJobCat}` : `Category: ${advJobCat}`, clear: () => setAdvJobCat("") },
+    { val: advOrg1, label: ar ? `المستوى الأول: ${advOrg1}` : `Level 1: ${advOrg1}`, clear: () => setAdvOrg1("") },
   ].filter(c => c.val);
 
   return (
@@ -473,18 +475,18 @@ export function EmployeeList() {
                       )} />
 
                       <span className="hidden sm:inline">
-                        {importing ? "جاري الاستيراد..." :
-                         importStatus === "success" ? "تم الاستيراد" :
-                         importStatus === "error"   ? "فشل الاستيراد" :
-                         "استيراد من Sheets"}
+                        {importing ? (ar ? "جاري الاستيراد..." : "Importing...") :
+                         importStatus === "success" ? (ar ? "تم الاستيراد" : "Imported") :
+                         importStatus === "error"   ? (ar ? "فشل الاستيراد" : "Import Failed") :
+                         (ar ? "استيراد من Sheets" : "Import from Sheets")}
                       </span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-72 text-xs leading-relaxed space-y-2">
                     <p className="font-medium text-center">
-                      {importStatus === "success" ? "✅ آخر استيراد تم بنجاح" :
-                       importStatus === "error"   ? "❌ آخر استيراد فشل" :
-                       "📥 استيراد البيانات من Google Sheets إلى قاعدة البيانات"}
+                      {importStatus === "success" ? (ar ? "✅ آخر استيراد تم بنجاح" : "✅ Last import successful") :
+                       importStatus === "error"   ? (ar ? "❌ آخر استيراد فشل" : "❌ Last import failed") :
+                       (ar ? "📥 استيراد البيانات من Google Sheets إلى قاعدة البيانات" : "📥 Import data from Google Sheets to database")}
                     </p>
                     <div className="flex items-center gap-2 pt-1 border-t border-slate-200 dark:border-slate-600">
                       <button
@@ -497,12 +499,12 @@ export function EmployeeList() {
                         )}
                       >
                         <RefreshCw className="h-3 w-3" />
-                        {syncDeletes ? "مزامنة المحذوفات: مفعّلة" : "مزامنة المحذوفات: معطّلة"}
+                        {syncDeletes ? (ar ? "مزامنة المحذوفات: مفعّلة" : "Sync Deletes: ON") : (ar ? "مزامنة المحذوفات: معطّلة" : "Sync Deletes: OFF")}
                       </button>
                     </div>
                     {syncDeletes && (
                       <p className="text-red-500 dark:text-red-400 text-xs">
-                        ⚠️ سيُحذف كل موظف في قاعدة البيانات غير موجود في الـ Sheet
+                        {ar ? "⚠️ سيُحذف كل موظف في قاعدة البيانات غير موجود في الـ Sheet" : "⚠️ Employees in DB but not in Sheet will be deleted"}
                       </p>
                     )}
                   </TooltipContent>
@@ -546,18 +548,18 @@ export function EmployeeList() {
                       )} />
 
                       <span className="hidden sm:inline">
-                        {headersFixed === true  ? "الترويسات مُصحَّحة" :
-                         headersFixed === false ? "فشل التصحيح" :
-                         "تصحيح ترويسات الـ Sheet"}
+                        {headersFixed === true  ? (ar ? "الترويسات مُصحَّحة" : "Headers Corrected") :
+                         headersFixed === false ? (ar ? "فشل التصحيح" : "Correction Failed") :
+                         (ar ? "تصحيح ترويسات الـ Sheet" : "Fix Sheet Headers")}
                       </span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-64 text-center text-xs leading-relaxed">
                     {headersFixed === true
-                      ? "✅ تم تصحيح ترويسات الـ Sheet بنجاح — يمكنك الآن إرسال رابط التعبئة للموظفين"
+                      ? (ar ? "✅ تم تصحيح ترويسات الـ Sheet بنجاح — يمكنك الآن إرسال رابط التعبئة للموظفين" : "✅ Sheet headers corrected successfully — you can now send the form link to employees")
                       : headersFixed === false
-                        ? "❌ فشل تصحيح الترويسات — تأكد من إعداد Google Sheets في صفحة الإعدادات أولاً"
-                        : "⚠️ يُنصح بالضغط على هذا الزر قبل إرسال رابط التعبئة للموظفين لضمان دقة البيانات في الـ Sheet"}
+                        ? (ar ? "❌ فشل تصحيح الترويسات — تأكد من إعداد Google Sheets في صفحة الإعدادات أولاً" : "❌ Header correction failed — ensure Google Sheets is configured in settings first")
+                        : (ar ? "⚠️ يُنصح بالضغط على هذا الزر قبل إرسال رابط التعبئة للموظفين لضمان دقة البيانات في الـ Sheet" : "⚠️ Recommended to click this before sending the form link to ensure data accuracy in the Sheet")}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -591,7 +593,7 @@ export function EmployeeList() {
                 </TooltipTrigger>
                 {!copiedFormLink && headersFixed !== true && isAdmin && (
                   <TooltipContent side="bottom" className="max-w-64 text-center text-xs leading-relaxed bg-amber-50 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700">
-                    ⚠️ تأكد من تصحيح ترويسات الـ Sheet أولاً قبل إرسال هذا الرابط للموظفين
+                    {ar ? "⚠️ تأكد من تصحيح ترويسات الـ Sheet أولاً قبل إرسال هذا الرابط للموظفين" : "⚠️ Ensure Sheet headers are corrected before sending this link to employees"}
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -632,7 +634,7 @@ export function EmployeeList() {
               <SelectTrigger className="w-40 h-9"><SelectValue placeholder={ar ? "محافظة العمل" : "Governorate"} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{ar ? "كل المحافظات" : "All Governorates"}</SelectItem>
-                {GOVERNORATES.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                {GOVERNORATES.map((g, idx) => <SelectItem key={g} value={g}>{ar ? g : GOVERNORATES_EN[idx]}</SelectItem>)}
               </SelectContent>
             </Select>
 
@@ -641,7 +643,13 @@ export function EmployeeList() {
               <SelectTrigger className="w-32 h-9"><SelectValue placeholder={ar ? "الحالة" : "Status"} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{ar ? "كل الحالات" : "All Statuses"}</SelectItem>
-                {["نشط","إجازة","منتدب","متوفى","مفصول"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                {[
+                  { ar: "نشط", en: "Active" },
+                  { ar: "إجازة", en: "Leave" },
+                  { ar: "منتدب", en: "Seconded" },
+                  { ar: "متوفى", en: "Deceased" },
+                  { ar: "مفصول", en: "Dismissed" }
+                ].map(s => <SelectItem key={s.ar} value={s.ar}>{ar ? s.ar : s.en}</SelectItem>)}
               </SelectContent>
             </Select>
 
@@ -650,8 +658,8 @@ export function EmployeeList() {
               <SelectTrigger className="w-28 h-9"><SelectValue placeholder={ar ? "الجنس" : "Gender"} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{ar ? "الجميع" : "All"}</SelectItem>
-                <SelectItem value="ذكر">ذكر</SelectItem>
-                <SelectItem value="أنثى">أنثى</SelectItem>
+                <SelectItem value="ذكر">{ar ? "ذكر" : "Male"}</SelectItem>
+                <SelectItem value="أنثى">{ar ? "أنثى" : "Female"}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -660,8 +668,8 @@ export function EmployeeList() {
               <SelectTrigger className="w-36 h-9"><SelectValue placeholder={ar ? "مثبت / متعاقد" : "Employment"} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{ar ? "الكل" : "All"}</SelectItem>
-                <SelectItem value="مثبت">مثبت</SelectItem>
-                <SelectItem value="متعاقد">متعاقد</SelectItem>
+                <SelectItem value="مثبت">{ar ? "مثبت" : "Permanent"}</SelectItem>
+                <SelectItem value="متعاقد">{ar ? "متعاقد" : "Contract"}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -697,7 +705,7 @@ export function EmployeeList() {
                   <SelectTrigger className="w-44 h-9"><SelectValue placeholder={ar ? "اختر الفئة..." : "Select category..."} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{ar ? "كل الفئات" : "All Categories"}</SelectItem>
-                    {JOB_CATEGORIES.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}
+                    {JOB_CATEGORIES.map((j, idx) => <SelectItem key={j} value={j}>{ar ? j : JOB_CATEGORIES_EN[idx]}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -776,7 +784,7 @@ export function EmployeeList() {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">جاري التحميل...</p>
+              <p className="text-sm text-muted-foreground">{ar ? "جاري التحميل..." : "Loading..."}</p>
             </div>
           ) : (
             <>
@@ -839,7 +847,15 @@ export function EmployeeList() {
                             <td key={col.key} className="px-3 py-2.5">
                               {col.key === "status" ? (
                                 val
-                                  ? <Badge variant={(STATUS_BADGE[val] || "outline") as any} className="text-xs">{val}</Badge>
+                                  ? <Badge variant={(STATUS_BADGE[val] || "outline") as any} className="text-xs">
+                                      {ar ? val : (
+                                        val === "نشط" ? "Active" :
+                                        val === "إجازة" ? "Leave" :
+                                        val === "منتدب" ? "Seconded" :
+                                        val === "متوفى" ? "Deceased" :
+                                        val === "مفصول" ? "Dismissed" : val
+                                      )}
+                                    </Badge>
                                   : <span className="text-slate-300 dark:text-slate-600">—</span>
                               ) : col.key === "nationalId" ? (
                                 <span className="font-mono text-xs tracking-wider text-slate-700 dark:text-slate-300">
@@ -866,7 +882,7 @@ export function EmployeeList() {
                             <Button
                               variant="ghost" size="icon-sm"
                               onClick={() => setViewEmp(emp)}
-                              title="عرض التفاصيل"
+                              title={ar ? "عرض التفاصيل" : "View Details"}
                               className="text-primary hover:bg-primary/10 h-7 w-7"
                               data-testid={`button-view-${emp.id}`}
                             >
@@ -876,7 +892,7 @@ export function EmployeeList() {
                             <Button
                               variant="ghost" size="icon-sm"
                               onClick={() => handleCopy(emp.nationalId, emp.id)}
-                              title="نسخ الرقم الوطني"
+                              title={ar ? "نسخ الرقم الوطني" : "Copy National ID"}
                               className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 h-7 w-7"
                               data-testid={`button-copy-${emp.id}`}
                             >
@@ -890,7 +906,7 @@ export function EmployeeList() {
                                 <Button
                                   variant="ghost" size="icon-sm"
                                   onClick={() => nav(`/admin/employees/${emp.id}/edit`)}
-                                  title="تعديل"
+                                  title={ar ? "تعديل" : "Edit"}
                                   className="text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 h-7 w-7"
                                   data-testid={`button-edit-${emp.id}`}
                                 >
@@ -899,7 +915,7 @@ export function EmployeeList() {
                                 <Button
                                   variant="ghost" size="icon-sm"
                                   onClick={() => setDeleteId(emp.id)}
-                                  title="حذف"
+                                  title={ar ? "حذف" : "Delete"}
                                   className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 h-7 w-7"
                                   data-testid={`button-delete-${emp.id}`}
                                 >
@@ -919,10 +935,10 @@ export function EmployeeList() {
               {totalPages > 1 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/20">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <Button variant="outline" size="icon-sm" onClick={() => goPage(1)} disabled={page === 1} className="h-8 w-8" title="الأولى">
+                    <Button variant="outline" size="icon-sm" onClick={() => goPage(1)} disabled={page === 1} className="h-8 w-8" title={ar ? "الأولى" : "First"}>
                       <ChevronsRight className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="outline" size="icon-sm" onClick={() => goPage(page - 1)} disabled={page === 1} className="h-8 w-8" title="السابق">
+                    <Button variant="outline" size="icon-sm" onClick={() => goPage(page - 1)} disabled={page === 1} className="h-8 w-8" title={ar ? "السابق" : "Previous"}>
                       <ChevronRight className="h-3.5 w-3.5" />
                     </Button>
 
@@ -943,16 +959,16 @@ export function EmployeeList() {
                       )
                     )}
 
-                    <Button variant="outline" size="icon-sm" onClick={() => goPage(page + 1)} disabled={page >= totalPages} className="h-8 w-8" title="التالي">
+                    <Button variant="outline" size="icon-sm" onClick={() => goPage(page + 1)} disabled={page >= totalPages} className="h-8 w-8" title={ar ? "التالي" : "Next"}>
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="outline" size="icon-sm" onClick={() => goPage(totalPages)} disabled={page >= totalPages} className="h-8 w-8" title="الأخيرة">
+                    <Button variant="outline" size="icon-sm" onClick={() => goPage(totalPages)} disabled={page >= totalPages} className="h-8 w-8" title={ar ? "الأخيرة" : "Last"}>
                       <ChevronsLeft className="h-3.5 w-3.5" />
                     </Button>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">انتقال إلى:</span>
+                    <span className="text-xs text-muted-foreground">{ar ? "انتقال إلى:" : "Jump to:"}</span>
                     <Input
                       type="number" min={1} max={totalPages}
                       value={jumpPage}
@@ -961,7 +977,7 @@ export function EmployeeList() {
                       placeholder={String(page)}
                       className="w-16 h-8 text-center text-xs"
                     />
-                    <span className="text-xs text-muted-foreground">من {totalPages}</span>
+                    <span className="text-xs text-muted-foreground">{ar ? `من ${totalPages}` : `of ${totalPages}`}</span>
                   </div>
                 </div>
               )}
@@ -1014,28 +1030,28 @@ export function EmployeeList() {
                 {/* إجمالي */}
                 <div className="col-span-2 flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                    <Download className="h-4 w-4" /> إجمالي الصفوف
+                    <Download className="h-4 w-4" /> {ar ? "إجمالي الصفوف" : "Total Rows"}
                   </span>
                   <span className="font-bold text-slate-800 dark:text-slate-100">{importResult.total}</span>
                 </div>
                 {/* مُضاف */}
                 <div className="flex items-center justify-between rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-3 py-2">
                   <span className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <Plus className="h-3.5 w-3.5" /> مُضاف جديد
+                    <Plus className="h-3.5 w-3.5" /> {ar ? "مُضاف جديد" : "Added New"}
                   </span>
                   <span className="font-bold text-emerald-700 dark:text-emerald-400">{importResult.inserted}</span>
                 </div>
                 {/* مُحدَّث */}
                 <div className="flex items-center justify-between rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2">
                   <span className="text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                    <RefreshCw className="h-3.5 w-3.5" /> مُحدَّث
+                    <RefreshCw className="h-3.5 w-3.5" /> {ar ? "مُحدَّث" : "Updated"}
                   </span>
                   <span className="font-bold text-blue-700 dark:text-blue-400">{importResult.updated}</span>
                 </div>
                 {/* مُتجاوَز */}
                 <div className="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-3 py-2">
                   <span className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                    <SkipForward className="h-3.5 w-3.5" /> مُتجاوَز
+                    <SkipForward className="h-3.5 w-3.5" /> {ar ? "مُتجاوَز" : "Skipped"}
                   </span>
                   <span className="font-bold text-amber-700 dark:text-amber-400">{importResult.skipped}</span>
                 </div>
@@ -1050,7 +1066,7 @@ export function EmployeeList() {
                     "text-xs flex items-center gap-1",
                     importResult.deleted > 0 ? "text-red-700 dark:text-red-400" : "text-slate-500 dark:text-slate-400"
                   )}>
-                    <Minus className="h-3.5 w-3.5" /> محذوف
+                    <Minus className="h-3.5 w-3.5" /> {ar ? "محذوف" : "Deleted"}
                   </span>
                   <span className={cn(
                     "font-bold",
@@ -1060,18 +1076,18 @@ export function EmployeeList() {
               </div>
               {importResult.deleted > 0 && (
                 <p className="text-xs text-red-500 dark:text-red-400 text-center">
-                  ⚠️ تم حذف {importResult.deleted} سجل غير موجود في الـ Sheet
+                  {ar ? `⚠️ تم حذف ${importResult.deleted} سجل غير موجود في الـ Sheet` : `⚠️ Deleted ${importResult.deleted} records not in the Sheet`}
                 </p>
               )}
             </div>
           ) : (
             <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
-              {importError || "حدث خطأ غير متوقع أثناء الاستيراد"}
+              {importError || (ar ? "حدث خطأ غير متوقع أثناء الاستيراد" : "An unexpected error occurred during import")}
             </div>
           )}
 
           <DialogFooter>
-            <Button size="sm" onClick={() => setImportDialogOpen(false)} className="w-full">إغلاق</Button>
+            <Button size="sm" onClick={() => setImportDialogOpen(false)} className="w-full">{ar ? "إغلاق" : "Close"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

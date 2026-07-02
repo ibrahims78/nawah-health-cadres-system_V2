@@ -12,17 +12,22 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { ProjectField } from "@shared/schema";
+import { useLang } from "@/context/LanguageContext";
 
 interface PreviewData { total: number; }
 
-function smartDefault(projectName?: string) {
+function smartDefault(projectName?: string, isAr?: boolean) {
   const now = new Date();
-  const months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-  return `${projectName || "بيانات"}_${months[now.getMonth()]}${now.getFullYear()}`;
+  const monthsAr = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+  const monthsEn = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const months = isAr ? monthsAr : monthsEn;
+  return `${projectName || (isAr ? "بيانات" : "Data")}_${months[now.getMonth()]}${now.getFullYear()}`;
 }
 
 export function ProjectExport() {
   const { id } = useParams<{ id: string }>();
+  const { lang } = useLang();
+  const isAr = lang === "ar";
 
   const [format, setFormat] = useState<"xlsx" | "csv">("xlsx");
   const [exporting, setExporting] = useState(false);
@@ -66,22 +71,22 @@ export function ProjectExport() {
 
   const dynamicPresets = useMemo(() => {
     const base = [
-      { id: "full", icon: "📋", label: "كامل", desc: `جميع الحقول (${visibleFields.length})`, keys: allKeys },
+      { id: "full", icon: "📋", label: isAr ? "كامل" : "Full", desc: isAr ? `جميع الحقول (${visibleFields.length})` : `All fields (${visibleFields.length})`, keys: allKeys },
     ];
     for (const s of stepNums) {
       const stepFields = groupedByStep[s] || [];
-      const stepName = steps[s - 1] || `الخطوة ${s}`;
+      const stepName = steps[s - 1] || (isAr ? `الخطوة ${s}` : `Step ${s}`);
       base.push({
         id: `step_${s}`,
         icon: `${s}️⃣`,
         label: stepName,
-        desc: `${stepFields.length} حقل`,
+        desc: isAr ? `${stepFields.length} حقل` : `${stepFields.length} fields`,
         keys: stepFields.map(f => f.key),
       });
     }
-    base.push({ id: "custom", icon: "⚙️", label: "مخصص", desc: "اختر الحقول يدوياً", keys: [] });
+    base.push({ id: "custom", icon: "⚙️", label: isAr ? "مخصص" : "Custom", desc: isAr ? "اختر الحقول يدوياً" : "Select fields manually", keys: [] });
     return base;
-  }, [visibleFields, allKeys, stepNums, groupedByStep, steps]);
+  }, [visibleFields, allKeys, stepNums, groupedByStep, steps, isAr]);
 
   const activePreset = dynamicPresets.find(p => p.id === preset);
   const activeCols = preset === "custom" ? customCols : (activePreset?.keys || allKeys);
@@ -127,12 +132,12 @@ export function ProjectExport() {
   };
 
   const doExport = async () => {
-    if (activeCols.length === 0) { alert("اختر حقلاً واحداً على الأقل"); return; }
+    if (activeCols.length === 0) { alert(isAr ? "اختر حقلاً واحداً على الأقل" : "Select at least one field"); return; }
     setExporting(true);
     try {
       const params = new URLSearchParams();
       params.set("format", format);
-      params.set("filename", fileName || smartDefault(project?.name));
+      params.set("filename", fileName || smartDefault(project?.name, isAr));
       params.set("columns", activeCols.join(","));
       if (sheetPerGroup && groupByField && format === "xlsx") params.set("groupBy", groupByField);
       Object.entries(filters).forEach(([k, v]) => { if (v) params.set(`filter_${k}`, v); });
@@ -140,11 +145,11 @@ export function ProjectExport() {
       if (dateTo) params.set("dateTo", dateTo);
 
       const res = await fetch(`/api/projects/${id}/export?${params}`, { credentials: "include" });
-      if (!res.ok) { const e = await res.json().catch(() => ({ error: "فشل التصدير" })); throw new Error(e.error || "فشل"); }
+      if (!res.ok) { const e = await res.json().catch(() => ({ error: isAr ? "فشل التصدير" : "Export failed" })); throw new Error(e.error || (isAr ? "فشل" : "Failed")); }
       const blob = await res.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${fileName || smartDefault(project?.name)}.${format}`;
+      link.download = `${fileName || smartDefault(project?.name, isAr)}.${format}`;
       link.click();
       URL.revokeObjectURL(link.href);
     } catch (err: any) {
@@ -160,8 +165,8 @@ export function ProjectExport() {
 
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">📤 تصدير البيانات</h1>
-          <p className="text-muted-foreground text-sm mt-1">تصدير سجلات المشروع مع تحكم كامل في الفلاتر والأعمدة</p>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{isAr ? "📤 تصدير البيانات" : "📤 Export Data"}</h1>
+          <p className="text-muted-foreground text-sm mt-1">{isAr ? "تصدير سجلات المشروع مع تحكم كامل في الفلاتر والأعمدة" : "Export project records with full control over filters and columns"}</p>
         </div>
 
         {/* ① File name */}
@@ -169,33 +174,33 @@ export function ProjectExport() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <FileSpreadsheet className="h-4 w-4 text-green-600" />
-              اسم الملف
+              {isAr ? "اسم الملف" : "File Name"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
               value={fileName}
               onChange={e => setFileName(e.target.value)}
-              placeholder={smartDefault(project?.name)}
+              placeholder={smartDefault(project?.name, isAr)}
               data-testid="input-filename"
-              dir="rtl"
+              dir={isAr ? "rtl" : "ltr"}
             />
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs text-muted-foreground">أضف سريعاً:</span>
+              <span className="text-xs text-muted-foreground">{isAr ? "أضف سريعاً:" : "Quick add:"}</span>
               <Button size="sm" variant="outline" onClick={() => {
                 const now = new Date();
                 addToFileName(`${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`);
-              }} data-testid="button-add-date">📅 التاريخ</Button>
+              }} data-testid="button-add-date">📅 {isAr ? "التاريخ" : "Date"}</Button>
               <Button size="sm" variant="outline"
-                onClick={() => preview && addToFileName(`${preview.total}سجل`)}
+                onClick={() => preview && addToFileName(`${preview.total}${isAr ? "سجل" : "records"}`)}
                 disabled={previewLoading} data-testid="button-add-count">
-                🔢 عدد السجلات
+                🔢 {isAr ? "عدد السجلات" : "Record Count"}
               </Button>
               {governorateField && (
                 <Button size="sm" variant="outline"
-                  onClick={() => addToFileName("المحافظة")}
+                  onClick={() => addToFileName(isAr ? "المحافظة" : "Governorate")}
                   data-testid="button-add-governorate">
-                  🗺️ المحافظة
+                  🗺️ {isAr ? "المحافظة" : "Governorate"}
                 </Button>
               )}
             </div>
@@ -211,9 +216,9 @@ export function ProjectExport() {
             <CardTitle className="text-base flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-blue-600" />
-                فلترة السجلات
+                {isAr ? "فلترة السجلات" : "Filter Records"}
                 {activeFilterCount > 0 && (
-                  <Badge variant="secondary">{activeFilterCount} فلتر نشط</Badge>
+                  <Badge variant="secondary">{isAr ? `${activeFilterCount} فلتر نشط` : `${activeFilterCount} active filters`}</Badge>
                 )}
               </span>
               {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -225,15 +230,15 @@ export function ProjectExport() {
               <div className="space-y-2">
                 <Label className="text-xs flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5" />
-                  نطاق التاريخ
+                  {isAr ? "نطاق التاريخ" : "Date Range"}
                 </Label>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">من</Label>
+                    <Label className="text-[11px] text-muted-foreground">{isAr ? "من" : "From"}</Label>
                     <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 text-sm" data-testid="input-date-from" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">إلى</Label>
+                    <Label className="text-[11px] text-muted-foreground">{isAr ? "إلى" : "To"}</Label>
                     <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-8 text-sm" data-testid="input-date-to" />
                   </div>
                 </div>
@@ -242,7 +247,7 @@ export function ProjectExport() {
               {/* Field filters */}
               {filterableFields.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">فلتر حسب القيمة</Label>
+                  <Label className="text-xs text-muted-foreground">{isAr ? "فلتر حسب القيمة" : "Filter by value"}</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {filterableFields.map(f => {
                       const opts = (f.options as string[] | null) || [];
@@ -256,7 +261,7 @@ export function ProjectExport() {
                               className="w-full h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
                               data-testid={`filter-${f.key}`}
                             >
-                              <option value="">الكل</option>
+                              <option value="">{isAr ? "الكل" : "All"}</option>
                               {opts.map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
@@ -272,7 +277,7 @@ export function ProjectExport() {
               {activeFilterCount > 0 && (
                 <Button size="sm" variant="ghost" className="text-red-500 h-7 text-xs"
                   onClick={() => { setFilters({}); setDateFrom(""); setDateTo(""); }}>
-                  ✕ مسح جميع الفلاتر
+                  ✕ {isAr ? "مسح جميع الفلاتر" : "Clear all filters"}
                 </Button>
               )}
             </CardContent>
@@ -284,7 +289,7 @@ export function ProjectExport() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Columns className="h-4 w-4 text-purple-600" />
-              الحقول المُصدَّرة
+              {isAr ? "الحقول المُصدَّرة" : "Exported Fields"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -318,15 +323,15 @@ export function ProjectExport() {
             {preset === "custom" && showCustom && (
               <div className="border rounded-xl p-3 space-y-4 bg-slate-50 dark:bg-slate-800/40">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">اختر الحقول ({customCols.length} / {visibleFields.length})</span>
+                  <span className="text-sm font-medium">{isAr ? `اختر الحقول (${customCols.length} / ${visibleFields.length})` : `Select fields (${customCols.length} / ${visibleFields.length})`}</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols(allKeys)}>تحديد الكل</Button>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols([])}>إلغاء الكل</Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols(allKeys)}>{isAr ? "تحديد الكل" : "Select All"}</Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCustomCols([])}>{isAr ? "إلغاء الكل" : "Clear All"}</Button>
                   </div>
                 </div>
                 {stepNums.map(s => {
                   const stepFields = groupedByStep[s] || [];
-                  const stepName = steps[s - 1] || `الخطوة ${s}`;
+                  const stepName = steps[s - 1] || (isAr ? `الخطوة ${s}` : `Step ${s}`);
                   const stepKeys = stepFields.map(f => f.key);
                   const allChecked = stepKeys.every(k => customCols.includes(k));
                   return (
@@ -343,7 +348,7 @@ export function ProjectExport() {
                           }}
                           className="text-[11px] text-primary hover:underline"
                         >
-                          {allChecked ? "إلغاء تحديد الخطوة" : "تحديد الخطوة"}
+                          {allChecked ? (isAr ? "إلغاء تحديد الخطوة" : "Deselect Step") : (isAr ? "تحديد الخطوة" : "Select Step")}
                         </button>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
@@ -364,9 +369,10 @@ export function ProjectExport() {
             )}
 
             <p className="text-xs text-muted-foreground">
-              سيتم تصدير{" "}
+              {isAr ? "سيتم تصدير " : "Will export "}
               <span className="font-bold text-primary">{activeCols.length}</span>
-              {" "}حقل من أصل {visibleFields.length}
+              {isAr ? " حقل من أصل " : " fields out of "}
+              {visibleFields.length}
             </p>
           </CardContent>
         </Card>
@@ -376,7 +382,7 @@ export function ProjectExport() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <FileText className="h-4 w-4 text-orange-500" />
-              صيغة التصدير
+              {isAr ? "صيغة التصدير" : "Export Format"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -385,13 +391,13 @@ export function ProjectExport() {
                 className={`p-4 rounded-xl border-2 text-right transition-all ${format === "xlsx" ? "border-green-500 bg-green-50 dark:bg-green-900/20" : "border-slate-200 dark:border-slate-700 hover:border-green-300"}`}>
                 <div className="text-2xl mb-1">📗</div>
                 <div className="font-semibold text-sm">Excel (.xlsx)</div>
-                <div className="text-xs text-muted-foreground">تنسيق احترافي وعناوين عربية</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "تنسيق احترافي وعناوين عربية" : "Professional format with localized headers"}</div>
               </button>
               <button data-testid="format-csv" onClick={() => setFormat("csv")}
                 className={`p-4 rounded-xl border-2 text-right transition-all ${format === "csv" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-slate-200 dark:border-slate-700 hover:border-blue-300"}`}>
                 <div className="text-2xl mb-1">📄</div>
                 <div className="font-semibold text-sm">CSV (.csv)</div>
-                <div className="text-xs text-muted-foreground">UTF-8 مع BOM لدعم Excel العربي</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "UTF-8 مع BOM لدعم Excel العربي" : "UTF-8 with BOM for Excel compatibility"}</div>
               </button>
             </div>
 
@@ -400,17 +406,17 @@ export function ProjectExport() {
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input type="checkbox" checked={sheetPerGroup} onChange={e => setSheetPerGroup(e.target.checked)} data-testid="check-sheet-per-group" className="accent-primary w-4 h-4" />
                   <div>
-                    <div className="text-sm font-medium">تجميع في Sheets منفصلة</div>
-                    <div className="text-xs text-muted-foreground">ورقة عمل منفصلة لكل قيمة في الحقل المحدد</div>
+                    <div className="text-sm font-medium">{isAr ? "تجميع في Sheets منفصلة" : "Group into separate Sheets"}</div>
+                    <div className="text-xs text-muted-foreground">{isAr ? "ورقة عمل منفصلة لكل قيمة في الحقل المحدد" : "A separate worksheet for each value in the selected field"}</div>
                   </div>
                 </label>
                 {sheetPerGroup && (
                   <div className="space-y-1 pr-7">
-                    <Label className="text-xs">التجميع حسب حقل</Label>
+                    <Label className="text-xs">{isAr ? "التجميع حسب حقل" : "Group by field"}</Label>
                     <select value={groupByField} onChange={e => setGroupByField(e.target.value)}
                       className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm"
                       data-testid="select-group-field">
-                      <option value="">اختر حقلاً...</option>
+                      <option value="">{isAr ? "اختر حقلاً..." : "Select a field..."}</option>
                       {visibleFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
                   </div>
@@ -424,57 +430,57 @@ export function ProjectExport() {
         <Card className="border-2 border-primary/20 bg-primary/5 dark:bg-primary/10">
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-base font-bold">📊 ملخص التصدير</span>
+              <span className="text-base font-bold">📊 {isAr ? "ملخص التصدير" : "Export Summary"}</span>
               {previewLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
             <div className="grid grid-cols-4 gap-3 text-center mb-5">
               <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
                 <div className="text-2xl font-bold text-primary">
-                  {previewLoading ? "…" : (preview?.total ?? 0).toLocaleString("ar")}
+                  {previewLoading ? "…" : (preview?.total ?? 0).toLocaleString(isAr ? "ar-EG" : "en-US")}
                 </div>
-                <div className="text-xs text-muted-foreground">إجمالي السجلات</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "إجمالي السجلات" : "Total Records"}</div>
               </div>
               <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
                 <div className="text-2xl font-bold text-purple-600">{activeCols.length}</div>
-                <div className="text-xs text-muted-foreground">حقل مُصدَّر</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "حقل مُصدَّر" : "Exported Fields"}</div>
               </div>
               <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
                 <div className="text-2xl font-bold text-orange-500 uppercase">{format}</div>
-                <div className="text-xs text-muted-foreground">صيغة الملف</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "صيغة الملف" : "File Format"}</div>
               </div>
               <div className="bg-white dark:bg-slate-800 rounded-xl p-3 shadow-sm">
                 <div className="text-2xl font-bold text-blue-600">{activeFilterCount}</div>
-                <div className="text-xs text-muted-foreground">فلتر نشط</div>
+                <div className="text-xs text-muted-foreground">{isAr ? "فلتر نشط" : "Active Filters"}</div>
               </div>
             </div>
 
             <div className="text-sm bg-white dark:bg-slate-800 rounded-lg p-3 space-y-1.5 mb-4">
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">اسم الملف:</span>
-                <span className="font-mono font-medium">{(fileName || smartDefault(project?.name))}.{format}</span>
+                <span className="text-muted-foreground">{isAr ? "اسم الملف:" : "File name:"}</span>
+                <span className="font-mono font-medium">{(fileName || smartDefault(project?.name, isAr))}.{format}</span>
               </div>
               {(dateFrom || dateTo) && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">نطاق التاريخ:</span>
+                  <span className="text-muted-foreground">{isAr ? "نطاق التاريخ:" : "Date range:"}</span>
                   <span className="font-medium">{dateFrom || "—"} → {dateTo || "—"}</span>
                 </div>
               )}
               {sheetPerGroup && groupByField && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">التجميع حسب:</span>
+                  <span className="text-muted-foreground">{isAr ? "التجميع حسب:" : "Group by:"}</span>
                   <span className="font-medium">{visibleFields.find(f => f.key === groupByField)?.label || groupByField}</span>
                 </div>
               )}
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">الباقة:</span>
-                <span className="font-medium">{activePreset?.label || "كامل"}</span>
+                <span className="text-muted-foreground">{isAr ? "الباقة:" : "Preset:"}</span>
+                <span className="font-medium">{activePreset?.label || (isAr ? "كامل" : "Full")}</span>
               </div>
             </div>
 
             <Button className="w-full" size="lg" onClick={doExport} disabled={exporting || activeCols.length === 0} data-testid="button-export">
               {exporting
-                ? <><Loader2 className="h-5 w-5 animate-spin ml-2" /> جاري التصدير...</>
-                : <><Download className="h-5 w-5 ml-2" /> تصدير الآن</>}
+                ? <>{isAr ? "جاري التصدير..." : "Exporting..."}<Loader2 className="h-5 w-5 animate-spin ml-2" /></>
+                : <>{isAr ? "تصدير الآن" : "Export Now"}<Download className="h-5 w-5 ml-2" /></>}
             </Button>
           </CardContent>
         </Card>

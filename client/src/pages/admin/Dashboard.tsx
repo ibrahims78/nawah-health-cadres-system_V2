@@ -60,10 +60,11 @@ const STAT_CARDS = (stats: Stats | undefined, ar: boolean) => [
 ];
 
 function StatCard({
-  title, value, icon: Icon, lightColor, textColor, bar,
+  title, value, icon: Icon, lightColor, textColor, bar, ar,
 }: {
   title: string; value: number; icon: React.ElementType;
   color: string; lightColor: string; textColor: string; bar: string;
+  ar: boolean;
 }) {
   return (
     <Card className="relative overflow-hidden group hover:shadow-card-md transition-shadow duration-200">
@@ -76,7 +77,7 @@ function StatCard({
               {title}
             </p>
             <p className="text-3xl font-black text-slate-800 dark:text-slate-100 tabular-nums">
-              {value.toLocaleString("ar-SY")}
+              {value.toLocaleString(ar ? "ar-SY" : "en-US")}
             </p>
           </div>
           <div className={`p-3 rounded-2xl ${lightColor} transition-transform group-hover:scale-110 duration-200`}>
@@ -85,19 +86,19 @@ function StatCard({
         </div>
         <div className="flex items-center gap-1 mt-3 text-xs text-muted-foreground">
           <ArrowUpRight className="h-3 w-3 text-emerald-500" />
-          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">محدّث</span>
+          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{ar ? "محدّث" : "Updated"}</span>
         </div>
       </CardContent>
     </Card>
   );
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label, ar }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-card-lg px-4 py-2.5">
         <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{label}</p>
-        <p className="text-primary font-black text-lg">{payload[0].value.toLocaleString("ar-SY")}</p>
+        <p className="text-primary font-black text-lg">{payload[0].value.toLocaleString(ar ? "ar-SY" : "en-US")}</p>
       </div>
     );
   }
@@ -149,7 +150,7 @@ export function Dashboard() {
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statCards.map(c => (
-            <StatCard key={c.title} {...c} />
+            <StatCard key={c.title} {...c} ar={ar} />
           ))}
         </div>
 
@@ -170,9 +171,9 @@ export function Dashboard() {
                     margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(214 32% 91%)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "Cairo" }} tickLine={false} axisLine={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: ar ? "Cairo" : "Inter" }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(210 40% 96%)", radius: 8 }} />
+                    <Tooltip content={<CustomTooltip ar={ar} />} cursor={{ fill: "hsl(210 40% 96%)", radius: 8 }} />
                     <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} maxBarSize={48} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -210,11 +211,11 @@ export function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => [value.toLocaleString("ar-SY"), ""]}
+                      formatter={(value: number) => [value.toLocaleString(ar ? "ar-SY" : "en-US"), ""]}
                       contentStyle={{
                         borderRadius: "12px",
                         border: "1px solid hsl(214 32% 91%)",
-                        fontFamily: "Cairo",
+                        fontFamily: ar ? "Cairo" : "Inter",
                         fontSize: "13px",
                       }}
                     />
@@ -232,7 +233,7 @@ export function Dashboard() {
                   {stats.byGender.filter(g => g.value > 0).map((g, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
                       <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                      {g.name} ({g.value.toLocaleString("ar-SY")})
+                      {g.name} ({g.value.toLocaleString(ar ? "ar-SY" : "en-US")})
                     </div>
                   ))}
                 </div>

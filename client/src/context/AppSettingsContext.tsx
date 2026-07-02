@@ -49,7 +49,8 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
 
   // Keep browser tab title in sync
   useEffect(() => {
-    document.title = `${settings.appName} — منصة إدارة نماذج التسجيل والبيانات`;
+    const isAr = (localStorage.getItem("lang") || "ar") === "ar";
+    document.title = `${settings.appName} — ${isAr ? "منصة إدارة نماذج التسجيل والبيانات" : "Forms & Data Management Platform"}`;
   }, [settings.appName]);
 
   return (

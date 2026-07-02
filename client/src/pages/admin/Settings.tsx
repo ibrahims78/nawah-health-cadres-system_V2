@@ -129,7 +129,7 @@ export function Settings() {
     setInviting(true);
     try {
       const res = await apiRequest<{ ok: boolean; inviteUrl: string; emailSent: boolean }>("POST", "/api/settings/send-invitation", { email: inviteEmail, role: inviteRole });
-      setInviteResult(res.emailSent ? "✅ تم إرسال البريد" : `🔗 رابط الدعوة: ${res.inviteUrl}`);
+      setInviteResult(res.emailSent ? (ar ? "✅ تم إرسال البريد" : "✅ Email sent") : (ar ? `🔗 رابط الدعوة: ${res.inviteUrl}` : `🔗 Invite link: ${res.inviteUrl}`));
       setInviteEmail("");
       refetchUsers();
     } catch (err: any) { setInviteResult(`❌ ${err.message}`); }
@@ -137,7 +137,7 @@ export function Settings() {
   };
 
   const deleteUser = async (id: string) => {
-    if (!confirm("حذف هذا المستخدم؟")) return;
+    if (!confirm(ar ? "حذف هذا المستخدم؟" : "Delete this user?")) return;
     try { await apiRequest("DELETE", `/api/admin/users/${id}`); refetchUsers(); }
     catch (err: any) { alert(err.message); }
   };
@@ -150,7 +150,7 @@ export function Settings() {
       await apiRequest("POST", "/api/settings/create-user", {
         fullName: createName, email: createEmail, password: createPassword, role: createRole,
       });
-      setCreateResult({ ok: true, msg: `✅ تم إنشاء الحساب بنجاح لـ ${createName}` });
+      setCreateResult({ ok: true, msg: ar ? `✅ تم إنشاء الحساب بنجاح لـ ${createName}` : `✅ Account created successfully for ${createName}` });
       setCreateName(""); setCreateEmail(""); setCreatePassword(""); setCreateRole("viewer");
       refetchUsers();
     } catch (err: any) {
@@ -161,7 +161,7 @@ export function Settings() {
   };
 
   const fixSheetHeaders = async () => {
-    if (!confirm("سيتم الكتابة فوق صف الترويسات (الصف الأول) في الـ Sheet بالأسماء الرسمية. البيانات لن تُمسّ. هل تريد المتابعة؟")) return;
+    if (!confirm(ar ? "سيتم الكتابة فوق صف الترويسات (الصف الأول) في الـ Sheet بالأسماء الرسمية. البيانات لن تُمسّ. هل تريد المتابعة؟" : "Column headers (first row) in the sheet will be overwritten with official names. Data will not be touched. Continue?")) return;
     setFixingHeaders(true);
     setFixResult(null);
     try {
@@ -251,7 +251,7 @@ export function Settings() {
                       <tr key={u.id} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="px-4 py-2 font-medium">{u.fullName}</td>
                         <td className="px-4 py-2 text-muted-foreground hidden md:table-cell text-xs">{u.email}</td>
-                        <td className="px-4 py-2"><Badge variant={u.role === "admin" ? "default" : u.role === "editor" ? "outline" : "secondary"}>{u.role === "admin" ? "مدير" : u.role === "editor" ? "محرر" : "مشاهد"}</Badge></td>
+                        <td className="px-4 py-2"><Badge variant={u.role === "admin" ? "default" : u.role === "editor" ? "outline" : "secondary"}>{u.role === "admin" ? (ar ? "مدير" : "Admin") : u.role === "editor" ? (ar ? "محرر" : "Editor") : (ar ? "مشاهد" : "Viewer")}</Badge></td>
                         <td className="px-4 py-2 text-muted-foreground text-xs hidden lg:table-cell">{u.lastLoginAt ? formatDate(u.lastLoginAt) : "—"}</td>
                         <td className="px-4 py-2">
                           <div className="flex items-center justify-center gap-1">
@@ -429,32 +429,32 @@ export function Settings() {
           {/* Google Tab */}
           <TabsContent value="google">
             <div className="section-card space-y-5">
-              <h3 className="font-semibold">إعدادات Google Sheets</h3>
+              <h3 className="font-semibold">{ar ? "إعدادات Google Sheets" : "Google Sheets Settings"}</h3>
 
               {/* Step-by-step guide */}
               <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl space-y-4">
-                <p className="font-semibold text-sm text-green-900 dark:text-green-200">🗂️ دليل الربط مع Google Sheets — خطوة بخطوة</p>
+                <p className="font-semibold text-sm text-green-900 dark:text-green-200">{ar ? "🗂️ دليل الربط مع Google Sheets — خطوة بخطوة" : "🗂️ Step-by-Step Guide to Linking Google Sheets"}</p>
 
                 {/* Step 1 */}
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="shrink-0 w-6 h-6 bg-green-200 dark:bg-green-800 rounded-full flex items-center justify-center font-bold text-green-900 dark:text-green-100 text-xs">١</span>
-                    <p className="text-sm font-semibold text-green-900 dark:text-green-200">أنشئ مشروعاً في Google Cloud Console</p>
+                    <span className="shrink-0 w-6 h-6 bg-green-200 dark:bg-green-800 rounded-full flex items-center justify-center font-bold text-green-900 dark:text-green-100 text-xs">{ar ? "١" : "1"}</span>
+                    <p className="text-sm font-semibold text-green-900 dark:text-green-200">{ar ? "أنشئ مشروعاً في Google Cloud Console" : "Create a Project in Google Cloud Console"}</p>
                   </div>
                   <div className="mr-8 text-xs text-green-800 dark:text-green-300 space-y-1">
-                    <p>افتح: <span className="font-mono bg-green-100 dark:bg-green-900 px-1 rounded">console.cloud.google.com</span></p>
-                    <p>← اضغط <strong>"New Project"</strong> ← سمّه مثلاً <strong>masar-platform</strong> ← اضغط Create</p>
+                    <p>{ar ? "افتح: " : "Open: "}<span className="font-mono bg-green-100 dark:bg-green-900 px-1 rounded">console.cloud.google.com</span></p>
+                    <p>{ar ? "← اضغط \"New Project\" ← سمّه مثلاً masar-platform ← اضغط Create" : "← Click \"New Project\" ← Name it e.g. masar-platform ← Click Create"}</p>
                   </div>
                 </div>
 
                 {/* Step 2 */}
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="shrink-0 w-6 h-6 bg-green-200 dark:bg-green-800 rounded-full flex items-center justify-center font-bold text-green-900 dark:text-green-100 text-xs">٢</span>
-                    <p className="text-sm font-semibold text-green-900 dark:text-green-200">فعّل Google Sheets API</p>
+                    <span className="shrink-0 w-6 h-6 bg-green-200 dark:bg-green-800 rounded-full flex items-center justify-center font-bold text-green-900 dark:text-green-100 text-xs">{ar ? "٢" : "2"}</span>
+                    <p className="text-sm font-semibold text-green-900 dark:text-green-200">{ar ? "فعّل Google Sheets API" : "Enable Google Sheets API"}</p>
                   </div>
                   <div className="mr-8 text-xs text-green-800 dark:text-green-300 space-y-1">
-                    <p>من القائمة ← <strong>APIs &amp; Services</strong> ← <strong>Library</strong></p>
+                    <p>{ar ? "من القائمة ← APIs & Services ← Library" : "From the menu ← APIs & Services ← Library"}</p>
                     <p>← ابحث عن <strong>"Google Sheets API"</strong> ← افتحها ← اضغط <strong>Enable</strong></p>
                   </div>
                 </div>

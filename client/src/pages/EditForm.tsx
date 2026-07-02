@@ -13,21 +13,29 @@ import { useLang } from "@/context/LanguageContext";
 import { apiRequest } from "@/lib/queryClient";
 
 const schema = z.object({
-  firstName: z.string().min(1, "الاسم مطلوب"),
-  familyName: z.string().min(1, "النسبة مطلوبة"),
-  nationalId: z.string().regex(/^\d{11}$/, "الرقم الوطني يجب أن يكون 11 رقماً بالضبط"),
+  firstName: z.string().min(1, "firstName_required"),
+  familyName: z.string().min(1, "familyName_required"),
+  nationalId: z.string().regex(/^\d{11}$/, "nationalId_invalid"),
 }).passthrough();
 
 export function EditForm() {
   const { token } = useParams<{ token: string }>();
   const { lang } = useLang();
+  const isAr = lang === "ar";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const methods = useForm({ resolver: zodResolver(schema), mode: "onBlur" });
+  // Update schema messages based on language
+  const translatedSchema = z.object({
+    firstName: z.string().min(1, isAr ? "الاسم مطلوب" : "First name is required"),
+    familyName: z.string().min(1, isAr ? "النسبة مطلوبة" : "Family name is required"),
+    nationalId: z.string().regex(/^\d{11}$/, isAr ? "الرقم الوطني يجب أن يكون 11 رقماً بالضبط" : "National ID must be exactly 11 digits"),
+  }).passthrough();
+
+  const methods = useForm({ resolver: zodResolver(translatedSchema), mode: "onBlur" });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,13 +44,13 @@ export function EditForm() {
         methods.reset(data);
       } catch (err: any) {
         if (err.message?.includes("انتهت")) setExpired(true);
-        else setError(err.message || "رابط غير صالح");
+        else setError(err.message || (isAr ? "رابط غير صالح" : "Invalid link"));
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, [token]);
+  }, [token, isAr]);
 
   const handleSave = async () => {
     const valid = await methods.trigger(["firstName", "familyName", "nationalId"]);
@@ -69,10 +77,10 @@ export function EditForm() {
       <div className="glass-card rounded-2xl p-8 max-w-md text-center">
         <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-          {lang === "ar" ? "انتهت صلاحية الرابط" : "Link Expired"}
+          {isAr ? "انتهت صلاحية الرابط" : "Link Expired"}
         </h2>
         <p className="text-slate-600 dark:text-slate-400">
-          {lang === "ar" ? "رابط التعديل صالح لـ 48 ساعة فقط. تواصل مع إدارتك للحصول على رابط جديد." : "The edit link is valid for 48 hours only. Contact your department for a new link."}
+          {isAr ? "رابط التعديل صالح لـ 48 ساعة فقط. تواصل مع إدارتك للحصول على رابط جديد." : "The edit link is valid for 48 hours only. Contact your department for a new link."}
         </p>
       </div>
     </div>
@@ -82,7 +90,7 @@ export function EditForm() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="glass-card rounded-2xl p-8 max-w-md text-center">
         <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold mb-2">{lang === "ar" ? "رابط غير صالح" : "Invalid Link"}</h2>
+        <h2 className="text-xl font-bold mb-2">{isAr ? "رابط غير صالح" : "Invalid Link"}</h2>
         <p className="text-slate-600 dark:text-slate-400">{error}</p>
       </div>
     </div>
@@ -93,10 +101,10 @@ export function EditForm() {
       <div className="glass-card rounded-2xl p-8 max-w-md text-center">
         <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-          {lang === "ar" ? "تم حفظ التعديلات!" : "Changes Saved!"}
+          {isAr ? "تم حفظ التعديلات!" : "Changes Saved!"}
         </h2>
         <p className="text-slate-600 dark:text-slate-400">
-          {lang === "ar" ? "تم تحديث بياناتك بنجاح." : "Your data has been updated successfully."}
+          {isAr ? "تم تحديث بياناتك بنجاح." : "Your data has been updated successfully."}
         </p>
       </div>
     </div>
@@ -107,7 +115,7 @@ export function EditForm() {
       <header className="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-            {lang === "ar" ? "✏️ تعديل بيانات النموذج — منصة مسارات" : "✏️ Edit Form Data — Masarat Platform"}
+            {isAr ? "✏️ تعديل بيانات النموذج — منصة مسارات" : "✏️ Edit Form Data — Masarat Platform"}
           </h1>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -122,7 +130,7 @@ export function EditForm() {
         </FormProvider>
         <div className="flex justify-end pb-8">
           <Button onClick={handleSave} disabled={saving} size="lg">
-            {saving ? <><Loader2 className="h-4 w-4 animate-spin ml-2" /> {lang === "ar" ? "جاري الحفظ..." : "Saving..."}</> : (lang === "ar" ? "💾 حفظ التعديلات" : "💾 Save Changes")}
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin ml-2" /> {isAr ? "جاري الحفظ..." : "Saving..."}</> : (isAr ? "💾 حفظ التعديلات" : "💾 Save Changes")}
           </Button>
         </div>
       </main>

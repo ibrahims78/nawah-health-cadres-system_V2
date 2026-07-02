@@ -105,11 +105,11 @@ export function EmployeeDetails() {
 
         {/* Print Header */}
         <div className="hidden print:block text-center mb-6 pb-4 border-b-2">
-          <h1 className="text-xl font-bold">نموذج التسجيل — منصة مسارات</h1>
+          <h1 className="text-xl font-bold">{ar ? "نموذج التسجيل — منصة مسارات" : "Registration Form — Masarat Platform"}</h1>
           <p className="text-sm text-gray-500">
-            {emp.firstName} {emp.fatherName} {emp.familyName} — رقم وطني: {emp.nationalId}
+            {emp.firstName} {emp.fatherName} {emp.familyName} — {ar ? "رقم وطني" : "National ID"}: {emp.nationalId}
           </p>
-          <p className="text-xs text-gray-400">طُبع: {new Date().toLocaleDateString("ar-SY")}</p>
+          <p className="text-xs text-gray-400">{ar ? "طُبع" : "Printed"}: {new Date().toLocaleDateString(ar ? "ar-SY" : "en-GB")}</p>
         </div>
 
         {/* Tabs — matching master file groupings */}
@@ -198,56 +198,56 @@ export function EmployeeDetails() {
         {/* Print View — all sections shown */}
         <div className="hidden print:block space-y-6">
           {[
-            { title: "البيانات التنظيمية والوظيفية", rows: [
-              ["المستوى التنظيمي الاول", emp.orgLevel1],
-              ["التصنيف/ الجهة المرتبطة", emp.orgClassification],
-              ["المستوى التنظيمي الثاني", emp.orgLevel2],
-              ["المستوى التنظيمي الثالث", emp.orgLevel3],
-              ["المستوى التنظيمي الرابع", emp.orgLevel4],
-              ["المستوى التنظيمي الخامس", emp.orgLevel5],
-              ["محافظة العمل", emp.workGovernorate],
-              ["الرقم الذاتي", emp.employeeRefId],
-              ["مسمى العمل", emp.jobTitle],
-              ["تاريخ التولد", emp.birthDate],
-              ["تاريخ بدء العمل بالدولة", emp.workStartDate],
-              ["تاريخ التثبيت في الدولة", emp.permanentDate],
-              ["تاريخ التعاقد في الدولة", emp.contractDate],
-              ["الفئة الوظيفية", emp.jobCategory],
-              ["مثبت أو متعاقد", emp.employmentStatus],
-              ["نمط التعيين أو التعاقد", emp.appointmentPattern],
-              ["تفاصيل دمج", emp.mergeDetails],
+            { title: ar ? "البيانات التنظيمية والوظيفية" : "Organizational & Job Data", rows: [
+              [ar ? "المستوى التنظيمي الاول" : "Org Level 1", emp.orgLevel1],
+              [ar ? "التصنيف/ الجهة المرتبطة" : "Classification", emp.orgClassification],
+              [ar ? "المستوى التنظيمي الثاني" : "Org Level 2", emp.orgLevel2],
+              [ar ? "المستوى التنظيمي الثالث" : "Org Level 3", emp.orgLevel3],
+              [ar ? "المستوى التنظيمي الرابع" : "Org Level 4", emp.orgLevel4],
+              [ar ? "المستوى التنظيمي الخامس" : "Org Level 5", emp.orgLevel5],
+              [ar ? "محافظة العمل" : "Work Governorate", emp.workGovernorate],
+              [ar ? "الرقم الذاتي" : "Ref. ID", emp.employeeRefId],
+              [ar ? "مسمى العمل" : "Job Title", emp.jobTitle],
+              [ar ? "تاريخ التولد" : "Birth Date", emp.birthDate],
+              [ar ? "تاريخ بدء العمل بالدولة" : "Work Start Date", emp.workStartDate],
+              [ar ? "تاريخ التثبيت في الدولة" : "Permanent Date", emp.permanentDate],
+              [ar ? "تاريخ التعاقد في الدولة" : "Contract Date", emp.contractDate],
+              [ar ? "الفئة الوظيفية" : "Job Category", emp.jobCategory],
+              [ar ? "مثبت أو متعاقد" : "Employment Status", emp.employmentStatus],
+              [ar ? "نمط التعيين أو التعاقد" : "Appointment Pattern", emp.appointmentPattern],
+              [ar ? "تفاصيل دمج" : "Merge Details", emp.mergeDetails],
             ]},
-            { title: "البيانات الشخصية", rows: [
-              ["الاسم", emp.firstName],
-              ["اسم الأب", emp.fatherName],
-              ["النسبة", emp.familyName],
-              ["اسم الأم الكامل", emp.motherFullName],
-              ["الرقم الوطني", emp.nationalId],
-              ["الجنس", emp.gender],
-              ["رقم الجوال", emp.mobile],
-              ["الوضع العائلي", emp.maritalStatus],
-              ["عدد الأبناء", emp.childrenCount],
-              ["عدد الزوجات", emp.wivesCount],
+            { title: ar ? "البيانات الشخصية" : "Personal Data", rows: [
+              [ar ? "الاسم" : "First Name", emp.firstName],
+              [ar ? "اسم الأب" : "Father's Name", emp.fatherName],
+              [ar ? "النسبة" : "Family Name", emp.familyName],
+              [ar ? "اسم الأم الكامل" : "Mother's Name", emp.motherFullName],
+              [ar ? "الرقم الوطني" : "National ID", emp.nationalId],
+              [ar ? "الجنس" : "Gender", emp.gender],
+              [ar ? "رقم الجوال" : "Mobile", emp.mobile],
+              [ar ? "الوضع العائلي" : "Marital Status", emp.maritalStatus],
+              [ar ? "عدد الأبناء" : "Children Count", emp.childrenCount],
+              [ar ? "عدد الزوجات" : "Wives Count", emp.wivesCount],
             ]},
-            { title: "الإقامة والقيد", rows: [
-              ["منطقة السكن", emp.residenceArea],
-              ["تفصيل مكان السكن", emp.residenceDetail],
-              ["رقم القيد", emp.registryNumber],
-              ["مكان القيد", emp.registryPlace],
-              ["دولة الولادة", emp.birthCountry],
-              ["المحافظة", emp.governorate],
-              ["المنطقة_المدينة", emp.cityDistrict],
-              ["الناحية", emp.subDistrict],
+            { title: ar ? "الإقامة والقيد" : "Residence & Registry", rows: [
+              [ar ? "منطقة السكن" : "Residence Area", emp.residenceArea],
+              [ar ? "تفصيل مكان السكن" : "Residence Detail", emp.residenceDetail],
+              [ar ? "رقم القيد" : "Registry Number", emp.registryNumber],
+              [ar ? "مكان القيد" : "Registry Place", emp.registryPlace],
+              [ar ? "دولة الولادة" : "Birth Country", emp.birthCountry],
+              [ar ? "المحافظة" : "Governorate", emp.governorate],
+              [ar ? "المنطقة_المدينة" : "City/District", emp.cityDistrict],
+              [ar ? "الناحية" : "Sub-District", emp.subDistrict],
             ]},
-            { title: "المؤهلات والحالة", rows: [
-              ["آخر مؤهل علمي معين على أساسه", emp.lastQualification],
-              ["هل لديك إعاقة", emp.hasDisability],
-              ["نوع الإعاقة", emp.disabilityType],
-              ["بطاقة الإعاقة", emp.disabilityCard],
-              ["الحالة", emp.status],
-              ["تفصيل الحالة", emp.statusDetail],
-              ["حساب شام كاش", emp.shamCashAccount],
-              ["ملاحظات مركزية", emp.centralNotes],
+            { title: ar ? "المؤهلات والحالة" : "Qualifications & Status", rows: [
+              [ar ? "آخر مؤهل علمي معين على أساسه" : "Last Qualification", emp.lastQualification],
+              [ar ? "هل لديك إعاقة" : "Has Disability", emp.hasDisability],
+              [ar ? "نوع الإعاقة" : "Disability Type", emp.disabilityType],
+              [ar ? "بطاقة الإعاقة" : "Disability Card", emp.disabilityCard],
+              [ar ? "الحالة" : "Status", emp.status],
+              [ar ? "تفصيل الحالة" : "Status Detail", emp.statusDetail],
+              [ar ? "حساب شام كاش" : "Sham Cash Account", emp.shamCashAccount],
+              [ar ? "ملاحظات مركزية" : "Central Notes", emp.centralNotes],
             ]},
           ].map(sec => (
             <div key={sec.title}>
@@ -256,7 +256,7 @@ export function EmployeeDetails() {
                 {sec.rows.map(([label, val]) => (
                   <div key={label as string} className="flex gap-2 py-1 border-b border-gray-200">
                     <span className="text-xs text-gray-500 min-w-36">{label as string}</span>
-                    <span className="text-xs font-medium">{val as string || "—"}</span>
+                    <span className="text-xs font-medium">{val as string || (ar ? "—" : "—")}</span>
                   </div>
                 ))}
               </div>

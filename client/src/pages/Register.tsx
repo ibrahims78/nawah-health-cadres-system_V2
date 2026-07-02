@@ -115,17 +115,17 @@ export function Register() {
             <div className="text-4xl">✅</div>
           </div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-            {lang === "ar" ? "تم استلام بياناتك بنجاح!" : "Data submitted successfully!"}
+            {isAr ? "تم استلام بياناتك بنجاح!" : "Data submitted successfully!"}
           </h2>
           <p className="text-slate-600 dark:text-slate-400 mb-6">
-            {lang === "ar"
+            {isAr
               ? `شكراً ${methods.getValues("firstName")} ${methods.getValues("familyName")}`
               : `Thank you ${methods.getValues("firstName")} ${methods.getValues("familyName")}`}
           </p>
 
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-4">
             <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-2">
-              {lang === "ar" ? "رابط التعديل الشخصي" : "Personal Edit Link"}
+              {isAr ? "رابط التعديل الشخصي" : "Personal Edit Link"}
             </p>
             <div className="flex items-center gap-2">
               <input
@@ -142,7 +142,7 @@ export function Register() {
               </Button>
             </div>
             <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
-              ⏱️ {lang === "ar"
+              ⏱️ {isAr
                 ? `صالح لـ ${success.tokenHours} ساعة فقط — يظهر مرة واحدة فقط، احتفظ به الآن`
                 : `Valid for ${success.tokenHours} hour(s) only — save it now`}
             </p>
@@ -163,7 +163,7 @@ export function Register() {
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                {lang === "ar" ? "نموذج التسجيل" : "Registration Form"}
+                {isAr ? "نموذج التسجيل" : "Registration Form"}
               </p>
               <p className="text-[10px] text-muted-foreground">{appName}</p>
             </div>
@@ -172,7 +172,7 @@ export function Register() {
             {step > 0 && (
               <span className="text-xs font-semibold text-muted-foreground hidden sm:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />
-                {lang === "ar" ? `الخطوة ${step + 1} من 4` : `Step ${step + 1} of 4`}
+                {isAr ? `الخطوة ${step + 1} من 4` : `Step ${step + 1} of 4`}
               </span>
             )}
             <ThemeToggle />
@@ -205,10 +205,10 @@ export function Register() {
         <div className="fixed bottom-0 left-0 right-0 no-print bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-700 shadow-lg z-40">
           <div className="max-w-3xl mx-auto px-4 py-3 flex justify-between items-center">
             <Button variant="outline" onClick={handleBack}>
-              {lang === "ar" ? <><ChevronRight className="h-4 w-4" /> رجوع</> : <>Back <ChevronLeft className="h-4 w-4" /></>}
+              {isAr ? <><ChevronRight className="h-4 w-4" /> رجوع</> : <><ChevronLeft className="h-4 w-4" /> Back</>}
             </Button>
             <Button onClick={handleNext}>
-              {lang === "ar" ? <>متابعة <ChevronLeft className="h-4 w-4" /></> : <>Next <ChevronRight className="h-4 w-4" /></>}
+              {isAr ? <>متابعة <ChevronLeft className="h-4 w-4" /></> : <>Continue <ChevronRight className="h-4 w-4" /></>}
             </Button>
           </div>
         </div>
@@ -221,8 +221,8 @@ export function Register() {
           {appName} &copy; {new Date().getFullYear()}
         </p>
         <p className="text-xs text-slate-400 dark:text-slate-500">
-          تصميم وبرمجة{" "}
-          <span className="font-semibold text-primary/70">إبراهيم الصيداوي</span>
+          {isAr ? "تصميم وبرمجة" : "Designed & Developed by"}{" "}
+          <span className="font-semibold text-primary/70">{isAr ? "إبراهيم الصيداوي" : "Ibrahim Al-Sidawi"}</span>
         </p>
         <div className="flex items-center justify-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
           <a

@@ -32,7 +32,7 @@ export function ProjectDashboard() {
   const { id } = useParams<{ id: string }>();
   const [, nav] = useLocation();
   const { lang } = useLang();
-  const ar = lang === "ar";
+  const isAr = lang === "ar";
 
   const { data: project } = useQuery<Project & { formEnabled?: boolean }>({
     queryKey: ["/api/projects", id],
@@ -51,10 +51,10 @@ export function ProjectDashboard() {
   });
 
   const statCards = [
-    { label: ar ? "إجمالي السجلات" : "Total Records", value: stats?.total ?? 0, icon: Users, color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20" },
-    { label: ar ? "هذا الشهر" : "This Month", value: stats?.month ?? 0, icon: Calendar, color: "text-purple-600 bg-purple-50 dark:bg-purple-900/20" },
-    { label: ar ? "هذا الأسبوع" : "This Week", value: stats?.week ?? 0, icon: TrendingUp, color: "text-green-600 bg-green-50 dark:bg-green-900/20" },
-    { label: ar ? "اليوم" : "Today", value: stats?.today ?? 0, icon: Clock, color: "text-orange-600 bg-orange-50 dark:bg-orange-900/20" },
+    { label: isAr ? "إجمالي السجلات" : "Total Records", value: stats?.total ?? 0, icon: Users, color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20" },
+    { label: isAr ? "هذا الشهر" : "This Month", value: stats?.month ?? 0, icon: Calendar, color: "text-purple-600 bg-purple-50 dark:bg-purple-900/20" },
+    { label: isAr ? "هذا الأسبوع" : "This Week", value: stats?.week ?? 0, icon: TrendingUp, color: "text-green-600 bg-green-50 dark:bg-green-900/20" },
+    { label: isAr ? "اليوم" : "Today", value: stats?.today ?? 0, icon: Clock, color: "text-orange-600 bg-orange-50 dark:bg-orange-900/20" },
   ];
 
   const distFields = distData?.fields || [];
@@ -75,27 +75,27 @@ export function ProjectDashboard() {
               {project?.formEnabled && (
                 <Badge className="bg-green-500 text-white gap-1.5 px-2 py-0.5 text-xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-white/90 animate-pulse inline-block" />
-                  {ar ? "🟢 مباشر" : "🟢 Live"}
+                  {isAr ? "🟢 مباشر" : "🟢 Live"}
                 </Badge>
               )}
               {project && !project.formEnabled && (
-                <Badge variant="secondary" className="text-xs">{ar ? "متوقف" : "Inactive"}</Badge>
+                <Badge variant="secondary" className="text-xs">{isAr ? "متوقف" : "Inactive"}</Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">{(project as any)?.description || (ar ? "لوحة تحكم المشروع" : "Project Dashboard")}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{(project as any)?.description || (isAr ? "لوحة تحكم المشروع" : "Project Dashboard")}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => window.open(`/p/${id}/register`, "_blank")} data-testid="button-open-form">
               <ExternalLink className="h-3.5 w-3.5 ml-1" />
-              {ar ? "فتح النموذج" : "Open Form"}
+              {isAr ? "فتح النموذج" : "Open Form"}
             </Button>
             <Button variant="outline" size="sm" onClick={() => nav(`/admin/projects/${id}/export`)} data-testid="button-export">
               <Download className="h-3.5 w-3.5 ml-1" />
-              {ar ? "تصدير" : "Export"}
+              {isAr ? "تصدير" : "Export"}
             </Button>
             <Button size="sm" onClick={() => nav(`/admin/projects/${id}/records/new`)} data-testid="button-add-record">
               <Plus className="h-3.5 w-3.5 ml-1" />
-              {ar ? "إضافة سجل" : "Add Record"}
+              {isAr ? "إضافة سجل" : "Add Record"}
             </Button>
           </div>
         </div>
@@ -111,7 +111,7 @@ export function ProjectDashboard() {
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${card.color}`}>
                     <card.icon className="h-5 w-5" />
                   </div>
-                  <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{card.value.toLocaleString("ar")}</div>
+                  <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{card.value.toLocaleString(isAr ? "ar-EG" : "en-US")}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{card.label}</div>
                 </Card>
               ))}
@@ -120,7 +120,7 @@ export function ProjectDashboard() {
             {/* ─── Trend chart ─── */}
             {stats?.dailyTrend && stats.dailyTrend.length > 0 && (
               <Card className="p-5">
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">📈 {ar ? "التسجيلات خلال آخر 14 يوم" : "Registrations — Last 14 Days"}</h3>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">📈 {isAr ? "التسجيلات خلال آخر 14 يوم" : "Registrations — Last 14 Days"}</h3>
                 <ResponsiveContainer width="100%" height={200}>
                   <AreaChart data={stats.dailyTrend}>
                     <defs>
@@ -131,7 +131,7 @@ export function ProjectDashboard() {
                     </defs>
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={dateLabel} />
                     <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                    <Tooltip formatter={(v: any) => [v, ar ? "سجل" : "records"]} labelFormatter={l => `${ar ? "تاريخ" : "Date"}: ${l}`} />
+                    <Tooltip formatter={(v: any) => [v, isAr ? "سجل" : "records"]} labelFormatter={l => `${isAr ? "تاريخ" : "Date"}: ${l}`} />
                     <Area type="monotone" dataKey="count" stroke="#3b82f6" fill="url(#grad1)" strokeWidth={2} dot={{ r: 3 }} />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -146,13 +146,13 @@ export function ProjectDashboard() {
                   <Card className="p-5">
                     <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
                       <BarChart2 className="h-4 w-4 text-blue-500" />
-                      {ar ? `توزيع حسب: ${barField.label}` : `Distribution by: ${barField.label}`}
+                      {isAr ? `توزيع حسب: ${barField.label}` : `Distribution by: ${barField.label}`}
                     </h3>
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart data={barData} layout="vertical" margin={{ right: 16, left: 8 }}>
                         <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
                         <YAxis type="category" dataKey="value" tick={{ fontSize: 10, textAnchor: "end" }} width={90} />
-                        <Tooltip formatter={(v: any) => [v, ar ? "سجل" : "records"]} />
+                        <Tooltip formatter={(v: any) => [v, isAr ? "سجل" : "records"]} />
                         <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                           {barData.map((_, i) => (
                             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -167,7 +167,7 @@ export function ProjectDashboard() {
                   <Card className="p-5">
                     <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
                       <PieIcon className="h-4 w-4 text-purple-500" />
-                      {ar ? `توزيع حسب: ${pieField.label}` : `Distribution by: ${pieField.label}`}
+                      {isAr ? `توزيع حسب: ${pieField.label}` : `Distribution by: ${pieField.label}`}
                     </h3>
                     <ResponsiveContainer width="100%" height={220}>
                       <PieChart>
@@ -186,7 +186,7 @@ export function ProjectDashboard() {
                           ))}
                         </Pie>
                         <Legend iconSize={10} formatter={(v) => <span className="text-xs">{v}</span>} />
-                        <Tooltip formatter={(v: any) => [v, ar ? "سجل" : "records"]} />
+                        <Tooltip formatter={(v: any) => [v, isAr ? "سجل" : "records"]} />
                       </PieChart>
                     </ResponsiveContainer>
                   </Card>
@@ -202,8 +202,8 @@ export function ProjectDashboard() {
                     <Users className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{ar ? "عرض السجلات" : "View Records"}</p>
-                    <p className="text-xs text-muted-foreground">{stats?.total} {ar ? "سجل مسجّل" : "records"}</p>
+                    <p className="text-sm font-semibold">{isAr ? "عرض السجلات" : "View Records"}</p>
+                    <p className="text-xs text-muted-foreground">{stats?.total} {isAr ? "سجل مسجّل" : "records"}</p>
                   </div>
                 </div>
               </Card>
@@ -213,8 +213,8 @@ export function ProjectDashboard() {
                     <ExternalLink className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{ar ? "رابط التسجيل" : "Registration Link"}</p>
-                    <p className="text-xs text-muted-foreground">{ar ? "مشاركة النموذج العام" : "Share the public form"}</p>
+                    <p className="text-sm font-semibold">{isAr ? "رابط التسجيل" : "Registration Link"}</p>
+                    <p className="text-xs text-muted-foreground">{isAr ? "مشاركة النموذج العام" : "Share the public form"}</p>
                   </div>
                 </div>
               </Card>
@@ -224,7 +224,7 @@ export function ProjectDashboard() {
                     <Settings className="h-5 w-5 text-purple-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{ar ? "إعدادات المشروع" : "Project Settings"}</p>
+                    <p className="text-sm font-semibold">{isAr ? "إعدادات المشروع" : "Project Settings"}</p>
                     <p className="text-xs text-muted-foreground">Google Sheets, Telegram</p>
                   </div>
                 </div>

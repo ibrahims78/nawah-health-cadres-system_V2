@@ -6,23 +6,26 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Edit, Loader2, Clock, Printer, CheckCircle2, Circle } from "lucide-react";
 import type { ProjectRecord, ProjectField, ProjectAuditLog, Project } from "@shared/schema";
+import { useLang } from "@/context/LanguageContext";
 
 interface DetailsResponse { record: ProjectRecord; auditLog: ProjectAuditLog[]; }
-
-const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
-  "مكتمل":      { label: "مكتمل",      cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
-  "منقوص":      { label: "منقوص",      cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
-  "مرفوض":      { label: "مرفوض",      cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
-  "قيد المراجعة": { label: "قيد المراجعة", cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
-};
-
-function getStatusStyle(val: string) {
-  return STATUS_STYLES[val] || { label: val, cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" };
-}
 
 export function ProjectRecordDetails() {
   const { id, recordId } = useParams<{ id: string; recordId: string }>();
   const [, nav] = useLocation();
+  const { lang } = useLang();
+  const isAr = lang === "ar";
+
+  const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
+    "مكتمل":      { label: isAr ? "مكتمل" : "Completed",      cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
+    "منقوص":      { label: isAr ? "منقوص" : "Incomplete",      cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
+    "مرفوض":      { label: isAr ? "مرفوض" : "Rejected",      cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+    "قيد المراجعة": { label: isAr ? "قيد المراجعة" : "Under Review", cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  };
+
+  function getStatusStyle(val: string) {
+    return STATUS_STYLES[val] || { label: val, cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" };
+  }
 
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -68,11 +71,11 @@ export function ProjectRecordDetails() {
         <div className="flex items-center gap-3 print:hidden">
           <Button variant="ghost" size="sm" onClick={() => nav(`/admin/projects/${id}/records`)}>
             <ArrowRight className="h-4 w-4 ml-1" />
-            السجلات
+            {isAr ? "السجلات" : "Records"}
           </Button>
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
           <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-            تفاصيل السجل #{record?.sequentialNumber}
+            {isAr ? "تفاصيل السجل" : "Record Details"} #{record?.sequentialNumber}
           </h1>
           {statusValue && (
             <Badge className={`text-xs px-2 py-0.5 ${getStatusStyle(String(statusValue)).cls}`}>
@@ -82,18 +85,18 @@ export function ProjectRecordDetails() {
           <div className="flex-1" />
           <Button variant="outline" size="sm" onClick={handlePrint} data-testid="button-print">
             <Printer className="h-4 w-4 ml-1" />
-            طباعة
+            {isAr ? "طباعة" : "Print"}
           </Button>
           <Button size="sm" onClick={() => nav(`/admin/projects/${id}/records/${recordId}/edit`)} data-testid="button-edit">
             <Edit className="h-4 w-4 ml-1" />
-            تعديل
+            {isAr ? "تعديل" : "Edit"}
           </Button>
         </div>
 
         {/* Print header (only visible when printing) */}
         <div className="hidden print:block mb-6">
-          <h1 className="text-xl font-bold">{project?.name || "بيانات التسجيل"}</h1>
-          <p className="text-sm text-gray-500">السجل #{record?.sequentialNumber} — {record?.submittedAt ? new Date(record.submittedAt).toLocaleDateString("ar") : ""}</p>
+          <h1 className="text-xl font-bold">{project?.name || (isAr ? "بيانات التسجيل" : "Registration Data")}</h1>
+          <p className="text-sm text-gray-500">{isAr ? "السجل" : "Record"} #{record?.sequentialNumber} — {record?.submittedAt ? new Date(record.submittedAt).toLocaleDateString(isAr ? "ar-EG" : "en-US") : ""}</p>
         </div>
 
         {isLoading ? (
@@ -104,15 +107,15 @@ export function ProjectRecordDetails() {
           <>
             {/* ─── Submission Meta ─── */}
             <div className="flex flex-wrap gap-4 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-800/50 rounded-lg px-4 py-3">
-              <span>📅 تاريخ التسجيل: <span className="font-medium text-slate-700 dark:text-slate-300">{record.submittedAt ? new Date(record.submittedAt).toLocaleString("ar") : "—"}</span></span>
-              {record.updatedAt && <span>✏️ آخر تحديث: <span className="font-medium text-slate-700 dark:text-slate-300">{new Date(record.updatedAt).toLocaleString("ar")}</span></span>}
+              <span>📅 {isAr ? "تاريخ التسجيل:" : "Submission Date:"} <span className="font-medium text-slate-700 dark:text-slate-300">{record.submittedAt ? new Date(record.submittedAt).toLocaleString(isAr ? "ar-EG" : "en-US") : "—"}</span></span>
+              {record.updatedAt && <span>✏️ {isAr ? "آخر تحديث:" : "Last Update:"} <span className="font-medium text-slate-700 dark:text-slate-300">{new Date(record.updatedAt).toLocaleString(isAr ? "ar-EG" : "en-US")}</span></span>}
             </div>
 
             {/* ─── Stepped Cards ─── */}
             {Object.keys(grouped).length > 0 ? (
               Object.entries(grouped).sort(([a], [b]) => Number(a) - Number(b)).map(([stepStr, stepFields]) => {
                 const stepNum = Number(stepStr);
-                const stepName = steps[stepNum - 1] || `الخطوة ${stepNum}`;
+                const stepName = steps[stepNum - 1] || (isAr ? `الخطوة ${stepNum}` : `Step ${stepNum}`);
                 return (
                   <Card key={stepStr} className="p-5 print:shadow-none print:border">
                     <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 pb-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
@@ -157,7 +160,7 @@ export function ProjectRecordDetails() {
               <Card className="p-5 print:hidden">
                 <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  سجل التعديلات
+                  {isAr ? "سجل التعديلات" : "Audit Log"}
                 </h3>
                 <div className="space-y-0">
                   {data.auditLog.map((log, idx) => (
@@ -169,11 +172,11 @@ export function ProjectRecordDetails() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                          {log.action === "create" ? "تم الإنشاء" : "تم التحديث"}
-                          {log.changedBy && <span className="text-muted-foreground font-normal"> — بواسطة {log.changedBy}</span>}
+                          {log.action === "create" ? (isAr ? "تم الإنشاء" : "Created") : (isAr ? "تم التحديث" : "Updated")}
+                          {log.changedBy && <span className="text-muted-foreground font-normal"> — {isAr ? "بواسطة" : "by"} {log.changedBy}</span>}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          {log.changedAt ? new Date(log.changedAt).toLocaleString("ar") : "—"}
+                          {log.changedAt ? new Date(log.changedAt).toLocaleString(isAr ? "ar-EG" : "en-US") : "—"}
                         </p>
                       </div>
                       <Badge variant={log.action === "create" ? "default" : "secondary"} className="text-[10px] shrink-0">
@@ -186,7 +189,7 @@ export function ProjectRecordDetails() {
             )}
           </>
         ) : (
-          <Card className="p-10 text-center text-muted-foreground">السجل غير موجود</Card>
+          <Card className="p-10 text-center text-muted-foreground">{isAr ? "السجل غير موجود" : "Record not found"}</Card>
         )}
       </div>
     </Layout>

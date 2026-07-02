@@ -127,7 +127,7 @@ export function Projects() {
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7"
-                      title="نسخ رابط النموذج"
+                      title={ar ? "نسخ رابط النموذج" : "Copy Form Link"}
                       onClick={e => copyLink(p, e)}
                       data-testid={`button-copy-link-${p.id}`}
                     >
@@ -137,7 +137,7 @@ export function Projects() {
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7"
-                      title="فتح النموذج"
+                      title={ar ? "فتح النموذج" : "Open Form"}
                       onClick={e => { e.stopPropagation(); window.open(`/p/${p.id}/register`, "_blank"); }}
                       data-testid={`button-form-${p.id}`}
                     >
@@ -145,7 +145,7 @@ export function Projects() {
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7"
-                      title="إعدادات"
+                      title={ar ? "إعدادات" : "Settings"}
                       onClick={e => { e.stopPropagation(); nav(`/admin/projects/${p.id}/settings`); }}
                       data-testid={`button-settings-${p.id}`}
                     >
@@ -153,7 +153,7 @@ export function Projects() {
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-500"
-                      title="حذف"
+                      title={ar ? "حذف" : "Delete"}
                       onClick={e => { e.stopPropagation(); setDeleteId(p.id); }}
                       data-testid={`button-delete-${p.id}`}
                     >
@@ -193,7 +193,7 @@ export function Projects() {
                   </Button>
                   <Button
                     size="sm" variant="outline" className="h-8 px-2"
-                    title="تصدير"
+                    title={ar ? "تصدير" : "Export"}
                     onClick={e => { e.stopPropagation(); nav(`/admin/projects/${p.id}/export`); }}
                     data-testid={`button-export-${p.id}`}
                   >
@@ -201,7 +201,7 @@ export function Projects() {
                   </Button>
                   <Button
                     size="sm" variant="outline" className="h-8 px-2"
-                    title="السجلات"
+                    title={ar ? "السجلات" : "Records"}
                     onClick={e => { e.stopPropagation(); nav(`/admin/projects/${p.id}/records`); }}
                     data-testid={`button-records-${p.id}`}
                   >

@@ -23,7 +23,7 @@ interface RecordsResponse { data: ProjectRecord[]; total: number; page: number; 
 
 function highlight(text: string, term: string) {
   if (!term || !text) return <>{text}</>;
-  const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\$&");
   const parts = text.split(new RegExp(`(${safe})`, "gi"));
   return <>{parts.map((p, i) =>
     parts.length > 1 && i % 2 === 1
@@ -64,6 +64,15 @@ const STATUS_COLORS: Record<string, string> = {
   "غير نشط":        "bg-slate-400",
 };
 
+const STATUS_MAP_EN: Record<string, string> = {
+  "مكتمل":          "Completed",
+  "منقوص":          "Incomplete",
+  "مرفوض":          "Rejected",
+  "قيد المراجعة":   "Under Review",
+  "نشط":            "Active",
+  "غير نشط":        "Inactive",
+};
+
 function getStatusColor(val: string): string {
   return STATUS_COLORS[val] || "bg-slate-300 dark:bg-slate-600";
 }
@@ -73,7 +82,7 @@ export function ProjectRecords() {
   const [, nav] = useLocation();
   const qc = useQueryClient();
   const { lang } = useLang();
-  const ar = lang === "ar";
+  const isAr = lang === "ar";
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -232,43 +241,43 @@ export function ProjectRecords() {
         {/* ─── Header ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100">{ar ? "السجلات" : "Records"}</h1>
+            <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100">{isAr ? "السجلات" : "Records"}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {isLoading ? (ar ? "جاري التحميل..." : "Loading...") : (ar ? `الإجمالي: ${total.toLocaleString("ar-SY")} سجل` : `Total: ${total.toLocaleString()} records`)}
+              {isLoading ? (isAr ? "جاري التحميل..." : "Loading...") : (isAr ? `الإجمالي: ${total.toLocaleString("ar-SY")} سجل` : `Total: ${total.toLocaleString()} records`)}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {selected.size > 0 && (
               <Button variant="destructive" size="sm"
-                onClick={() => { if (confirm(ar ? `حذف ${selected.size} سجل؟` : `Delete ${selected.size} records?`)) bulkDeleteMut.mutate([...selected]); }}
+                onClick={() => { if (confirm(isAr ? `حذف ${selected.size} سجل؟` : `Delete ${selected.size} records?`)) bulkDeleteMut.mutate([...selected]); }}
                 disabled={bulkDeleteMut.isPending} data-testid="button-bulk-delete">
                 {bulkDeleteMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
-                {ar ? `حذف ${selected.size} محدد` : `Delete ${selected.size} selected`}
+                {isAr ? `حذف ${selected.size} محدد` : `Delete ${selected.size} selected`}
               </Button>
             )}
 
             {/* Fix sheet headers */}
-            <Button variant="outline" size="sm" onClick={doFixHeaders} disabled={fixingHeaders} title="تصحيح ترويسات الـ Sheet" data-testid="button-fix-headers">
+            <Button variant="outline" size="sm" onClick={doFixHeaders} disabled={fixingHeaders} title={isAr ? "تصحيح ترويسات الـ Sheet" : "Fix Sheet Headers"} data-testid="button-fix-headers">
               {fixingHeaders ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
             </Button>
 
             {/* Import from Sheets */}
             <Button variant="outline" size="sm" onClick={() => { setImportOpen(true); setImportResult(null); }} data-testid="button-import-sheets">
               <Upload className="h-4 w-4 ml-1" />
-              {ar ? "استيراد Sheets" : "Import Sheets"}
+              {isAr ? "استيراد Sheets" : "Import Sheets"}
             </Button>
 
             {/* Copy form link */}
             <Button variant="outline" size="sm" onClick={copyFormLink} data-testid="button-copy-link">
               {copiedLink ? <Check className="h-4 w-4 ml-1 text-green-500" /> : <Link className="h-4 w-4 ml-1" />}
-              {copiedLink ? (ar ? "تم النسخ!" : "Copied!") : (ar ? "نسخ رابط النموذج" : "Copy Form Link")}
+              {copiedLink ? (isAr ? "تم النسخ!" : "Copied!") : (isAr ? "نسخ رابط النموذج" : "Copy Form Link")}
             </Button>
 
             <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
             <Button size="sm" onClick={() => nav(`/admin/projects/${id}/records/new`)} data-testid="button-add-record">
-              <Plus className="h-4 w-4 ml-1" />{ar ? "إضافة سجل" : "Add Record"}
+              <Plus className="h-4 w-4 ml-1" />{isAr ? "إضافة سجل" : "Add Record"}
             </Button>
           </div>
         </div>
@@ -285,7 +294,7 @@ export function ProjectRecords() {
         <div className="flex gap-2 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={ar ? "بحث في جميع الحقول..." : "Search all fields..."} className="pr-9" data-testid="input-search" />
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={isAr ? "بحث في جميع الحقول..." : "Search all fields..."} className="pr-9" data-testid="input-search" />
             {search && (
               <button onClick={() => { setSearch(""); setDebouncedSearch(""); }} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-700">
                 <X className="h-3.5 w-3.5" />
@@ -297,13 +306,13 @@ export function ProjectRecords() {
             <Button variant="outline" size="sm" onClick={() => setFilterOpen(v => !v)} data-testid="button-filters"
               className={cn(activeFilterCount > 0 && "border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400")}>
               <Filter className="h-4 w-4 ml-1" />
-              {ar ? "فلتر" : "Filter"}
+              {isAr ? "فلتر" : "Filter"}
               {activeFilterCount > 0 && <Badge variant="secondary" className="mr-1.5 h-4 px-1 text-[10px]">{activeFilterCount}</Badge>}
             </Button>
           )}
 
           <Button variant="outline" size="sm" onClick={() => setColPickerOpen(v => !v)} data-testid="button-columns">
-            <Columns3 className="h-4 w-4 ml-1" />{ar ? "الأعمدة" : "Columns"}
+            <Columns3 className="h-4 w-4 ml-1" />{isAr ? "الأعمدة" : "Columns"}
           </Button>
 
           {/* Limit buttons */}
@@ -322,7 +331,7 @@ export function ProjectRecords() {
         {/* ─── Active filter chips ─── */}
         {activeFilterCount > 0 && (
           <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-muted-foreground">{ar ? "الفلاتر:" : "Filters:"}</span>
+            <span className="text-xs text-muted-foreground">{isAr ? "الفلاتر:" : "Filters:"}</span>
             {Object.entries(fieldFilters).filter(([, v]) => v).map(([k, v]) => {
               const field = fields.find(f => f.key === k);
               return (
@@ -334,7 +343,7 @@ export function ProjectRecords() {
                 </Badge>
               );
             })}
-            <button onClick={() => setFieldFilters({})} className="text-xs text-red-500 hover:underline">{ar ? "مسح الكل" : "Clear All"}</button>
+            <button onClick={() => setFieldFilters({})} className="text-xs text-red-500 hover:underline">{isAr ? "مسح الكل" : "Clear All"}</button>
           </div>
         )}
 
@@ -350,7 +359,7 @@ export function ProjectRecords() {
                     {opts.length > 0 ? (
                       <select value={fieldFilters[f.key] || ""} onChange={e => { setFieldFilters(p => ({ ...p, [f.key]: e.target.value })); setPage(1); }}
                         className="w-full h-8 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs" data-testid={`filter-${f.key}`}>
-                        <option value="">{ar ? "الكل" : "All"}</option>
+                        <option value="">{isAr ? "الكل" : "All"}</option>
                         {opts.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
@@ -367,10 +376,10 @@ export function ProjectRecords() {
         {colPickerOpen && (
           <Card className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold">{ar ? `اختر الأعمدة المعروضة (${activeCols.length}/${visibleFields.length})` : `Select Visible Columns (${activeCols.length}/${visibleFields.length})`}</span>
+              <span className="text-sm font-semibold">{isAr ? `اختر الأعمدة المعروضة (${activeCols.length}/${visibleFields.length})` : `Select Visible Columns (${activeCols.length}/${visibleFields.length})`}</span>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setVisibleColKeys(visibleFields.map(f => f.key))}>{ar ? "تحديد الكل" : "Select All"}</Button>
-                <Button size="sm" variant="outline" onClick={() => setVisibleColKeys(null)}>{ar ? "الافتراضي" : "Default"}</Button>
+                <Button size="sm" variant="outline" onClick={() => setVisibleColKeys(visibleFields.map(f => f.key))}>{isAr ? "تحديد الكل" : "Select All"}</Button>
+                <Button size="sm" variant="outline" onClick={() => setVisibleColKeys(null)}>{isAr ? "الافتراضي" : "Default"}</Button>
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -401,9 +410,9 @@ export function ProjectRecords() {
           ) : !data?.data?.length ? (
             <div className="text-center py-16 text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{ar ? `لا توجد سجلات${search ? " مطابقة للبحث" : ""}` : `No records${search ? " matching the search" : ""}`}</p>
+              <p className="text-sm">{isAr ? `لا توجد سجلات${search ? " مطابقة للبحث" : ""}` : `No records${search ? " matching the search" : ""}`}</p>
               <Button size="sm" className="mt-4" onClick={() => nav(`/admin/projects/${id}/records/new`)}>
-                <Plus className="h-4 w-4 ml-1" /> {ar ? "إضافة أول سجل" : "Add First Record"}
+                <Plus className="h-4 w-4 ml-1" /> {isAr ? "إضافة أول سجل" : "Add First Record"}
               </Button>
             </div>
           ) : (
@@ -419,7 +428,7 @@ export function ProjectRecords() {
                     {colFields.map(f => (
                       <th key={f.id} className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">{f.label}</th>
                     ))}
-                    <th className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">{ar ? "التاريخ" : "Date"}</th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-xs text-muted-foreground whitespace-nowrap">{isAr ? "التاريخ" : "Date"}</th>
                     <th className="px-3 py-2.5 w-28" />
                   </tr>
                 </thead>
@@ -435,7 +444,7 @@ export function ProjectRecords() {
                         <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{record.sequentialNumber}</td>
                         {statusField && (
                           <td className="px-1 py-2.5">
-                            <div className={`w-1.5 h-8 rounded-full ${getStatusColor(statusVal)}`} title={statusVal} />
+                            <div className={`w-1.5 h-8 rounded-full ${getStatusColor(statusVal)}`} title={isAr ? statusVal : (STATUS_MAP_EN[statusVal] || statusVal)} />
                           </td>
                         )}
                         {colFields.map(f => {
@@ -449,7 +458,7 @@ export function ProjectRecords() {
                                   {debouncedSearch ? highlight(txt, debouncedSearch) : (txt || <span className="text-slate-300 dark:text-slate-600">—</span>)}
                                 </span>
                                 {txt && (
-                                  <button onClick={() => handleCopy(txt, copyKey)} className="shrink-0 text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="نسخ">
+                                  <button onClick={() => handleCopy(txt, copyKey)} className="shrink-0 text-slate-300 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" title={isAr ? "نسخ" : "Copy"}>
                                     {copiedId === copyKey ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                                   </button>
                                 )}
@@ -458,17 +467,17 @@ export function ProjectRecords() {
                           );
                         })}
                         <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                          {record.submittedAt ? new Date(record.submittedAt).toLocaleDateString("ar") : "—"}
+                          {record.submittedAt ? new Date(record.submittedAt).toLocaleDateString(isAr ? "ar" : "en-US") : "—"}
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-0.5 justify-end">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" title="عرض" onClick={() => setViewRecord(record)} data-testid={`button-view-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title={isAr ? "عرض" : "View"} onClick={() => setViewRecord(record)} data-testid={`button-view-${record.id}`}>
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" title="تعديل" onClick={() => nav(`/admin/projects/${id}/records/${record.id}/edit`)} data-testid={`button-edit-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title={isAr ? "تعديل" : "Edit"} onClick={() => nav(`/admin/projects/${id}/records/${record.id}/edit`)} data-testid={`button-edit-${record.id}`}>
                               <Edit className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600" title="حذف" onClick={() => setDeleteId(record.id)} data-testid={`button-delete-${record.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600" title={isAr ? "حذف" : "Delete"} onClick={() => setDeleteId(record.id)} data-testid={`button-delete-${record.id}`}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -483,152 +492,152 @@ export function ProjectRecords() {
         </Card>
 
         {/* ─── Pagination ─── */}
-        {total > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              {ar
-                ? `عرض ${startRow.toLocaleString("ar")}–${endRow.toLocaleString("ar")} من ${total.toLocaleString("ar")} سجل`
-                : `Showing ${startRow.toLocaleString()}–${endRow.toLocaleString()} of ${total.toLocaleString()} records`}
-            </p>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => goPage(1)} disabled={page === 1} data-testid="button-first-page">
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => goPage(page - 1)} disabled={page === 1} data-testid="button-prev-page">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              {getPaginationPages(page, totalPages).map((p, i) =>
-                p === "…" ? (
-                  <span key={`e-${i}`} className="px-1 text-muted-foreground text-xs">…</span>
-                ) : (
-                  <Button key={p} variant={p === page ? "default" : "outline"} size="sm" className="h-7 min-w-7 px-2 text-xs" onClick={() => goPage(p as number)} data-testid={`button-page-${p}`}>{p}</Button>
-                )
-              )}
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => goPage(page + 1)} disabled={page === totalPages} data-testid="button-next-page">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => goPage(totalPages)} disabled={page === totalPages} data-testid="button-last-page">
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-1 mr-1">
-                <Input value={jumpPage} onChange={e => setJumpPage(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { goPage(Number(jumpPage)); setJumpPage(""); } }}
-                  placeholder={ar ? "صفحة" : "Page"} className="h-7 w-14 text-xs text-center" data-testid="input-jump-page" />
-                <Button variant="outline" size="icon" className="h-7 w-7"
-                  onClick={() => { goPage(Number(jumpPage)); setJumpPage(""); }} data-testid="button-jump">
-                  <SkipForward className="h-3.5 w-3.5" />
-                </Button>
+        {!isLoading && total > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm">
+            <div className="text-xs text-muted-foreground order-2 sm:order-1">
+              {isAr ? `عرض ${startRow} - ${endRow} من أصل ${total}` : `Showing ${startRow} - ${endRow} of ${total}`}
+            </div>
+            <div className="flex items-center gap-1 order-1 sm:order-2">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goPage(1)} disabled={page === 1}><ChevronsRight className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goPage(page - 1)} disabled={page === 1}><ChevronRight className="h-4 w-4" /></Button>
+              <div className="flex items-center gap-1 mx-1">
+                {getPaginationPages(page, totalPages).map((p, i) => (
+                  p === "…" ? <span key={`sep-${i}`} className="px-1 text-slate-300">...</span> :
+                  <Button key={p} variant={page === p ? "default" : "outline"} size="sm" className="h-8 w-8 p-0 text-xs" onClick={() => goPage(p)}>{p}</Button>
+                ))}
+              </div>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goPage(page + 1)} disabled={page === totalPages}><ChevronLeft className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goPage(totalPages)} disabled={page === totalPages}><ChevronsLeft className="h-4 w-4" /></Button>
+
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block" />
+              <div className="flex items-center gap-1 hidden sm:flex">
+                <span className="text-[10px] text-muted-foreground">{isAr ? "انتقال:" : "Go to:"}</span>
+                <Input value={jumpPage} onChange={e => setJumpPage(e.target.value)} onKeyDown={e => e.key === "Enter" && (goPage(Number(jumpPage)), setJumpPage(""))}
+                  className="h-7 w-12 text-center text-xs p-0 px-1" placeholder="#" />
               </div>
             </div>
           </div>
         )}
 
         {/* ─── View Record Dialog ─── */}
-        <Dialog open={!!viewRecord} onOpenChange={() => setViewRecord(null)}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <Dialog open={!!viewRecord} onOpenChange={o => !o && setViewRecord(null)}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="border-b pb-3 mb-4">
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-xl font-bold">{isAr ? "تفاصيل السجل" : "Record Details"}</DialogTitle>
+                <Badge variant="outline" className="font-mono text-xs">#{viewRecord?.sequentialNumber}</Badge>
+              </div>
+            </DialogHeader>
             {viewRecord && (
-              <>
-                <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-700">
-                  <DialogTitle className="text-base font-bold">{ar ? `تفاصيل السجل #${viewRecord.sequentialNumber}` : `Record Details #${viewRecord.sequentialNumber}`}</DialogTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {viewRecord.submittedAt ? (ar ? `تاريخ التسجيل: ${new Date(viewRecord.submittedAt).toLocaleDateString("ar")}` : `Registered: ${new Date(viewRecord.submittedAt).toLocaleDateString()}`) : ""}
-                  </p>
-                </DialogHeader>
-                <div className="overflow-y-auto flex-1 p-4">
-                  <dl>{visibleFields.map(f => {
-                    const rdata = viewRecord.data as Record<string, any>;
-                    return <DetailRow key={f.id} label={f.label} value={rdata[f.key]} />;
-                  })}</dl>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                  <section>
+                    <h3 className="text-sm font-bold text-primary mb-3 flex items-center gap-2">
+                      <div className="w-1.5 h-4 bg-primary rounded-full" />
+                      {isAr ? "معلومات الحقول" : "Field Information"}
+                    </h3>
+                    <dl className="space-y-0.5">
+                      {fields.map(f => (
+                        <DetailRow key={f.key} label={f.label} value={(viewRecord.data as any)[f.key]} />
+                      ))}
+                    </dl>
+                  </section>
+                  <section>
+                    <h3 className="text-sm font-bold text-primary mb-3 flex items-center gap-2">
+                      <div className="w-1.5 h-4 bg-primary rounded-full" />
+                      {isAr ? "معلومات النظام" : "System Information"}
+                    </h3>
+                    <dl className="space-y-0.5">
+                      <DetailRow label={isAr ? "تاريخ التقديم" : "Submission Date"} value={viewRecord.submittedAt ? new Date(viewRecord.submittedAt).toLocaleString(isAr ? "ar" : "en-US") : "—"} />
+                      <DetailRow label={isAr ? "المعرف الفريد" : "Unique ID"} value={viewRecord.id} />
+                      <DetailRow label={isAr ? "رقم التسلسل" : "Sequence Number"} value={viewRecord.sequentialNumber} />
+                    </dl>
+                  </section>
                 </div>
-                <DialogFooter className="pt-3 border-t border-slate-100 dark:border-slate-700 gap-2 flex-row">
-                  <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print">
-                    <Printer className="h-4 w-4 ml-1" /> {ar ? "طباعة" : "Print"}
-                  </Button>
-                  <Button size="sm" onClick={() => { setViewRecord(null); nav(`/admin/projects/${id}/records/${viewRecord.id}/edit`); }} data-testid="button-edit-from-dialog">
-                    <Edit className="h-4 w-4 ml-1" /> {ar ? "تعديل" : "Edit"}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setViewRecord(null)} className="mr-auto" data-testid="button-close-dialog">{ar ? "إغلاق" : "Close"}</Button>
-                </DialogFooter>
-              </>
+              </div>
             )}
+            <DialogFooter className="border-t pt-4 mt-6 flex justify-between gap-2">
+              <Button variant="outline" onClick={() => window.print()} className="gap-2">
+                <Printer className="h-4 w-4" /> {isAr ? "طباعة" : "Print"}
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setViewRecord(null)}>{isAr ? "إغلاق" : "Close"}</Button>
+                <Button onClick={() => nav(`/admin/projects/${id}/records/${viewRecord?.id}/edit`)}>{isAr ? "تعديل السجل" : "Edit Record"}</Button>
+              </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* ─── Delete Confirm Dialog ─── */}
-        <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        {/* ─── Delete Confirmation ─── */}
+        <Dialog open={!!deleteId} onOpenChange={o => !o && setDeleteId(null)}>
           <DialogContent>
-            <DialogHeader><DialogTitle>{ar ? "تأكيد الحذف" : "Delete Record"}</DialogTitle></DialogHeader>
-            <p className="text-sm text-muted-foreground">{ar ? "هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء." : "Are you sure you want to delete this record? This action cannot be undone."}</p>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setDeleteId(null)} data-testid="button-cancel-delete">{ar ? "إلغاء" : "Cancel"}</Button>
-              <Button variant="destructive"
-                onClick={async () => {
-                  if (!deleteId) return;
-                  setDeleting(true);
-                  try { await deleteMut.mutateAsync(deleteId); }
-                  finally { setDeleting(false); }
-                }}
-                disabled={deleting} data-testid="button-confirm-delete">
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
-                {ar ? "حذف" : "Delete"}
+            <DialogHeader>
+              <DialogTitle>{isAr ? "حذف السجل" : "Delete Record"}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">{isAr ? "هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء." : "Are you sure you want to delete this record? This action cannot be undone."}</p>
+            <DialogFooter className="gap-2 pt-4">
+              <Button variant="outline" onClick={() => setDeleteId(null)}>{isAr ? "إلغاء" : "Cancel"}</Button>
+              <Button variant="destructive" onClick={() => deleteMut.mutate(deleteId!)} disabled={deleteMut.isPending}>
+                {deleteMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 ml-1" />}
+                {isAr ? "حذف" : "Delete"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* ─── Import from Sheets Dialog ─── */}
-        <Dialog open={importOpen} onOpenChange={v => { if (!importing) { setImportOpen(v); if (!v) setImportResult(null); } }}>
-          <DialogContent>
+        {/* ─── Import Dialog ─── */}
+        <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <DialogContent className="sm:max-w-[480px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-green-600" />
-                {ar ? "استيراد البيانات من Google Sheets" : "Import Data from Google Sheets"}
+                <Upload className="h-5 w-5 text-primary" />
+                {isAr ? "استيراد من Google Sheets" : "Import from Google Sheets"}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                {ar
-                  ? "سيتم قراءة البيانات من الـ Sheet المربوط بهذا المشروع ومطابقتها مع السجلات الموجودة بناءً على الرقم التسلسلي."
-                  : "Data will be read from the Google Sheet linked to this project and matched with existing records by sequential number."}
+            <div className="py-4 space-y-4">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {isAr ? "سيتم جلب جميع البيانات من ملف الـ Spreadsheet المرتبط بالمشروع ومزامنتها مع قاعدة البيانات المحلية." : "All data will be fetched from the Spreadsheet linked to the project and synced with the local database."}
               </p>
 
-              <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                <input type="checkbox" checked={syncDeleted} onChange={e => setSyncDeleted(e.target.checked)} className="accent-primary mt-0.5" data-testid="check-sync-deleted" />
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
                 <div>
-                  <p className="text-sm font-medium">{ar ? "مزامنة المحذوفات" : "Sync Deletions"}</p>
-                  <p className="text-xs text-muted-foreground">{ar ? "حذف السجلات غير الموجودة في الـ Sheet" : "Delete records not found in the Sheet"}</p>
+                  <p className="text-sm font-semibold">{isAr ? "مزامنة الحذف" : "Sync Deletion"}</p>
+                  <p className="text-[11px] text-muted-foreground">{isAr ? "حذف السجلات المحلية غير الموجودة في الـ Sheet" : "Delete local records not present in the Sheet"}</p>
                 </div>
-              </label>
+                <input type="checkbox" checked={syncDeleted} onChange={e => setSyncDeleted(e.target.checked)} className="h-4 w-4 rounded accent-primary" />
+              </div>
 
               {importResult && (
-                <div className={`p-3 rounded-lg border text-sm space-y-2 ${importResult.ok ? "bg-green-50 dark:bg-green-900/20 border-green-200" : "bg-red-50 dark:bg-red-900/20 border-red-200"}`}>
-                  <p className={importResult.ok ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>
-                    {importResult.message}
-                  </p>
+                <Card className={cn("p-4 border-l-4", importResult.ok ? "bg-green-50 border-green-400 text-green-800" : "bg-red-50 border-red-400 text-red-800")}>
+                  <p className="text-sm font-bold mb-1">{importResult.ok ? (isAr ? "✅ اكتمل الاستيراد بنجاح" : "✅ Import completed successfully") : (isAr ? "❌ فشل الاستيراد" : "❌ Import failed")}</p>
+                  <p className="text-xs opacity-90 mb-3">{importResult.message}</p>
                   {importResult.ok && (
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                        <p className="text-lg font-bold text-green-600">{importResult.added ?? 0}</p>
-                        <p className="text-[11px] text-muted-foreground">{ar ? "مُضاف" : "Added"}</p>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-green-200">
+                      <div className="text-center">
+                        <p className="text-xs text-green-600 mb-0.5">{isAr ? "جديد" : "New"}</p>
+                        <p className="font-bold text-lg">{importResult.added || 0}</p>
                       </div>
-                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                        <p className="text-lg font-bold text-blue-600">{importResult.updated ?? 0}</p>
-                        <p className="text-[11px] text-muted-foreground">{ar ? "مُحدَّث" : "Updated"}</p>
+                      <div className="text-center border-x border-green-200">
+                        <p className="text-xs text-green-600 mb-0.5">{isAr ? "محدث" : "Updated"}</p>
+                        <p className="font-bold text-lg">{importResult.updated || 0}</p>
                       </div>
-                      <div className="text-center p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                        <p className="text-lg font-bold text-slate-500">{importResult.skipped ?? 0}</p>
-                        <p className="text-[11px] text-muted-foreground">{ar ? "مُتجاوَز" : "Skipped"}</p>
+                      <div className="text-center">
+                        <p className="text-xs text-green-600 mb-0.5">{isAr ? "تخطي" : "Skipped"}</p>
+                        <p className="font-bold text-lg">{importResult.skipped || 0}</p>
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
               )}
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => { setImportOpen(false); setImportResult(null); }} disabled={importing} data-testid="button-cancel-import">{ar ? "إلغاء" : "Cancel"}</Button>
-              <Button onClick={doImport} disabled={importing} className="bg-green-600 hover:bg-green-700" data-testid="button-confirm-import">
-                {importing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Upload className="h-4 w-4 ml-1" />}
-                {importing ? (ar ? "جاري الاستيراد..." : "Importing...") : (ar ? "بدء الاستيراد" : "Start Import")}
+              <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importing}>{isAr ? "إغلاق" : "Close"}</Button>
+              <Button onClick={doImport} disabled={importing} className="min-w-[120px]">
+                {importing ? (
+                  <><Loader2 className="h-4 w-4 animate-spin ml-2" /> {isAr ? "جاري الاستيراد..." : "Importing..."}</>
+                ) : (
+                  <><Upload className="h-4 w-4 ml-2" /> {isAr ? "بدء المزامنة" : "Start Sync"}</>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

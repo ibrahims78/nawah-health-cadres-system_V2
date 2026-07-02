@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,23 +10,27 @@ import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
-
-const schema = z.object({
-  fullName: z.string().min(2, "الاسم يجب أن يكون حرفين على الأقل"),
-  password: z.string().min(8, "8 أحرف على الأقل"),
-  confirmPassword: z.string(),
-}).refine(d => d.password === d.confirmPassword, {
-  message: "كلمتا المرور غير متطابقتان",
-  path: ["confirmPassword"],
-});
+import { useLang } from "@/context/LanguageContext";
 
 export function AdminRegister() {
   const { token } = useParams<{ token: string }>();
   const [, nav] = useLocation();
   const { refresh } = useAuth();
+  const { lang } = useLang();
+  const isAr = lang === "ar";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPass, setShowPass] = useState(false);
+
+  const schema = useMemo(() => z.object({
+    fullName: z.string().min(2, isAr ? "الاسم يجب أن يكون حرفين على الأقل" : "Name must be at least 2 characters"),
+    password: z.string().min(8, isAr ? "8 أحرف على الأقل" : "At least 8 characters"),
+    confirmPassword: z.string(),
+  }).refine(d => d.password === d.confirmPassword, {
+    message: isAr ? "كلمتا المرور غير متطابقتان" : "Passwords do not match",
+    path: ["confirmPassword"],
+  }), [isAr]);
+
   const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
 
   const onSubmit = async (data: any) => {
@@ -61,9 +65,9 @@ export function AdminRegister() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-card-lg mb-4">
             <UserPlus className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100">إنشاء حسابك</h1>
+          <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100">{isAr ? "إنشاء حسابك" : "Create Your Account"}</h1>
           <p className="text-muted-foreground text-sm mt-1.5">
-            تم دعوتك للانضمام إلى منصة مسارات
+            {isAr ? "تم دعوتك للانضمام إلى منصة مسارات" : "You have been invited to join Masarat Platform"}
           </p>
         </div>
 
@@ -71,14 +75,14 @@ export function AdminRegister() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
               <Label htmlFor="fullName" required className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                الاسم الكامل
+                {isAr ? "الاسم الكامل" : "Full Name"}
               </Label>
               <Input
                 id="fullName"
                 {...register("fullName")}
                 error={!!errors.fullName}
                 className="mt-1.5"
-                placeholder="محمد أحمد السيد"
+                placeholder={isAr ? "محمد أحمد السيد" : "John Doe"}
                 autoFocus
               />
               {errors.fullName && (
@@ -90,7 +94,7 @@ export function AdminRegister() {
 
             <div>
               <Label htmlFor="password" required className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                كلمة المرور
+                {isAr ? "كلمة المرور" : "Password"}
               </Label>
               <div className="relative mt-1.5">
                 <Input
@@ -98,7 +102,7 @@ export function AdminRegister() {
                   type={showPass ? "text" : "password"}
                   {...register("password")}
                   error={!!errors.password}
-                  placeholder="8 أحرف على الأقل"
+                  placeholder={isAr ? "8 أحرف على الأقل" : "At least 8 characters"}
                 />
                 <button
                   type="button"
@@ -117,7 +121,7 @@ export function AdminRegister() {
 
             <div>
               <Label htmlFor="confirmPassword" required className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                تأكيد كلمة المرور
+                {isAr ? "تأكيد كلمة المرور" : "Confirm Password"}
               </Label>
               <Input
                 id="confirmPassword"
@@ -143,14 +147,14 @@ export function AdminRegister() {
 
             <Button type="submit" className="w-full h-12 text-base font-bold shadow-md" disabled={loading}>
               {loading
-                ? <><Loader2 className="h-5 w-5 animate-spin ml-2" />جاري الإنشاء...</>
-                : <><CheckCircle2 className="h-5 w-5 ml-2" />إنشاء الحساب</>}
+                ? <><Loader2 className="h-5 w-5 animate-spin ml-2" />{isAr ? "جاري الإنشاء..." : "Creating..."}</>
+                : <><CheckCircle2 className="h-5 w-5 ml-2" />{isAr ? "إنشاء الحساب" : "Create Account"}</>}
             </Button>
           </form>
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-5">
-          منصة مسارات
+          {isAr ? "منصة مسارات" : "Masarat Platform"}
         </p>
       </div>
     </div>

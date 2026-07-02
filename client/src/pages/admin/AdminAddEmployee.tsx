@@ -11,10 +11,10 @@ import { Step3Personal } from "@/components/steps/Step3Personal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLang } from "@/context/LanguageContext";
 
-const schema = z.object({
-  firstName: z.string().min(1, "الاسم مطلوب"),
-  familyName: z.string().min(1, "النسبة مطلوبة"),
-  nationalId: z.string().regex(/^\d{11}$/, "الرقم الوطني يجب أن يكون 11 رقماً بالضبط"),
+const schema = (ar: boolean) => z.object({
+  firstName: z.string().min(1, ar ? "الاسم مطلوب" : "First Name is required"),
+  familyName: z.string().min(1, ar ? "النسبة مطلوبة" : "Family Name is required"),
+  nationalId: z.string().regex(/^\d{11}$/, ar ? "الرقم الوطني يجب أن يكون 11 رقماً بالضبط" : "National ID must be exactly 11 digits"),
 }).passthrough();
 
 export function AdminAddEmployee() {
@@ -26,7 +26,7 @@ export function AdminAddEmployee() {
   const [created, setCreated] = useState<{ id: string; name: string } | null>(null);
 
   const methods = useForm({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema(ar)),
     mode: "onBlur",
     defaultValues: {},
   });
@@ -62,20 +62,22 @@ export function AdminAddEmployee() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-            تمت إضافة الموظف بنجاح
+            {ar ? "تمت إضافة الموظف بنجاح" : "Employee Added Successfully"}
           </h2>
           <p className="text-slate-500 dark:text-slate-400">
-            تم حفظ <span className="font-semibold text-slate-700 dark:text-slate-200">{created.name}</span> في قاعدة البيانات ومزامنته مع Google Sheet تلقائياً.
+            {ar ? "تم حفظ " : "Saved "}
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{created.name}</span>
+            {ar ? " في قاعدة البيانات ومزامنته مع Google Sheet تلقائياً." : " to the database and synced to Google Sheet automatically."}
           </p>
           <div className="flex justify-center gap-3 flex-wrap">
             <Button onClick={() => nav(`/admin/employees/${created.id}`)} data-testid="button-view-created">
-              عرض ملف الموظف
+              {ar ? "عرض ملف الموظف" : "View Employee Profile"}
             </Button>
             <Button variant="outline" onClick={() => { setCreated(null); methods.reset({}); }} data-testid="button-add-another">
-              إضافة موظف آخر
+              {ar ? "إضافة موظف آخر" : "Add Another Employee"}
             </Button>
             <Button variant="ghost" onClick={() => nav("/admin/employees")} data-testid="button-back-list">
-              العودة للقائمة
+              {ar ? "العودة للقائمة" : "Back to List"}
             </Button>
           </div>
         </div>
@@ -97,7 +99,7 @@ export function AdminAddEmployee() {
               {ar ? "إضافة موظف جديد" : "Add New Employee"}
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              يتم الحفظ في قاعدة البيانات ومزامنته مع Google Sheet تلقائياً
+              {ar ? "يتم الحفظ في قاعدة البيانات ومزامنته مع Google Sheet تلقائياً" : "Saving to database and syncing to Google Sheet automatically"}
             </p>
           </div>
         </div>
