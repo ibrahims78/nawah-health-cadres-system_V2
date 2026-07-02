@@ -180,50 +180,61 @@ export async function createProjectSheet(projectId: string): Promise<{
 
     const fields = await getProjectFields(projectId);
     const sheetName = proj.googleSheetName || proj.name || "بيانات";
-    let movedToFolder = false;
+    const drive = google.drive({ version: "v3", auth });
 
-    // Always create a brand-new spreadsheet file
-    const newSheet = await sheets.spreadsheets.create({
-      requestBody: {
-        properties: { title: proj.name },
-        sheets: [{ properties: { title: sheetName } }],
-      },
-    });
-    const spreadsheetId = newSheet.data.spreadsheetId!;
+    let spreadsheetId: string;
+    let inFolder = false;
 
-    // Move to Drive folder if specified
     if (proj.googleDriveFolderId) {
-      try {
-        const drive = google.drive({ version: "v3", auth });
-        const fileInfo = await drive.files.get({
-          fileId: spreadsheetId,
-          fields: "parents",
-        });
-        const currentParents = (fileInfo.data.parents || []).join(",");
-        await drive.files.update({
-          fileId: spreadsheetId,
-          addParents: proj.googleDriveFolderId,
-          removeParents: currentParents || undefined,
-          fields: "id, parents",
-        } as any);
-        movedToFolder = true;
-      } catch (driveErr: any) {
-        console.error("[ProjectSheets] Drive move error:", driveErr.message);
-      }
+      // Create file DIRECTLY inside the target folder — no move needed, no permission issues
+      const driveFile = await drive.files.create({
+        requestBody: {
+          name: proj.name,
+          mimeType: "application/vnd.google-apps.spreadsheet",
+          parents: [proj.googleDriveFolderId],
+        },
+        fields: "id",
+      });
+      spreadsheetId = driveFile.data.id!;
+      inFolder = true;
+
+      // Rename the default sheet tab to the desired name
+      const defaultTab = await sheets.spreadsheets.get({ spreadsheetId });
+      const defaultSheetId = defaultTab.data.sheets?.[0]?.properties?.sheetId ?? 0;
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: defaultSheetId, title: sheetName },
+              fields: "title",
+            },
+          }],
+        },
+      });
+    } else {
+      // No folder specified — create normally via Sheets API
+      const newSheet = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: { title: proj.name },
+          sheets: [{ properties: { title: sheetName } }],
+        },
+      });
+      spreadsheetId = newSheet.data.spreadsheetId!;
     }
 
-    // Save new spreadsheet ID to project
+    // Persist new spreadsheet ID
     await db.update(projects)
       .set({ googleSheetId: spreadsheetId })
       .where(eq(projects.id, projectId));
 
-    // Write headers into the new sheet
+    // Write column headers
     await ensureHeaders(sheets, spreadsheetId, sheetName, fields);
 
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
     const parts: string[] = [];
     parts.push("تم إنشاء ملف Google Sheet جديد");
-    if (movedToFolder) parts.push("في المجلد المحدد في Drive");
+    if (inFolder) parts.push("في المجلد المحدد");
     parts.push(`بـ ${fields.length} عمود`);
 
     return {
