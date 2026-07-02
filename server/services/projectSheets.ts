@@ -180,58 +180,51 @@ export async function createProjectSheet(projectId: string): Promise<{
 
     const fields = await getProjectFields(projectId);
     const sheetName = proj.googleSheetName || proj.name || "بيانات";
-    let spreadsheetId = proj.googleSheetId;
     let movedToFolder = false;
-    let isNew = false;
 
-    if (!spreadsheetId) {
-      isNew = true;
-      // Create spreadsheet
-      const newSheet = await sheets.spreadsheets.create({
-        requestBody: {
-          properties: { title: proj.name },
-          sheets: [{ properties: { title: sheetName } }],
-        },
-      });
-      spreadsheetId = newSheet.data.spreadsheetId!;
+    // Always create a brand-new spreadsheet file
+    const newSheet = await sheets.spreadsheets.create({
+      requestBody: {
+        properties: { title: proj.name },
+        sheets: [{ properties: { title: sheetName } }],
+      },
+    });
+    const spreadsheetId = newSheet.data.spreadsheetId!;
 
-      // Move to Drive folder if specified
-      if (proj.googleDriveFolderId) {
-        try {
-          const drive = google.drive({ version: "v3", auth });
-          // Get current parents to remove them
-          const fileInfo = await drive.files.get({
-            fileId: spreadsheetId,
-            fields: "parents",
-          });
-          const currentParents = (fileInfo.data.parents || []).join(",");
-          await drive.files.update({
-            fileId: spreadsheetId,
-            addParents: proj.googleDriveFolderId,
-            removeParents: currentParents || undefined,
-            fields: "id, parents",
-          } as any);
-          movedToFolder = true;
-        } catch (driveErr: any) {
-          console.error("[ProjectSheets] Drive move error:", driveErr.message);
-          // Non-fatal: sheet was created, just not moved
-        }
+    // Move to Drive folder if specified
+    if (proj.googleDriveFolderId) {
+      try {
+        const drive = google.drive({ version: "v3", auth });
+        const fileInfo = await drive.files.get({
+          fileId: spreadsheetId,
+          fields: "parents",
+        });
+        const currentParents = (fileInfo.data.parents || []).join(",");
+        await drive.files.update({
+          fileId: spreadsheetId,
+          addParents: proj.googleDriveFolderId,
+          removeParents: currentParents || undefined,
+          fields: "id, parents",
+        } as any);
+        movedToFolder = true;
+      } catch (driveErr: any) {
+        console.error("[ProjectSheets] Drive move error:", driveErr.message);
       }
-
-      await db.update(projects)
-        .set({ googleSheetId: spreadsheetId })
-        .where(eq(projects.id, projectId));
     }
 
-    await ensureSheetTab(sheets, spreadsheetId, sheetName);
+    // Save new spreadsheet ID to project
+    await db.update(projects)
+      .set({ googleSheetId: spreadsheetId })
+      .where(eq(projects.id, projectId));
+
+    // Write headers into the new sheet
     await ensureHeaders(sheets, spreadsheetId, sheetName, fields);
 
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
     const parts: string[] = [];
-    if (isNew) parts.push("تم إنشاء ملف Google Sheet جديد");
-    else parts.push("تم تحديث ترويسات الـ Sheet الموجود");
-    if (movedToFolder) parts.push("ونقله إلى المجلد المحدد في Drive");
-    parts.push(`(${fields.length} عمود)`);
+    parts.push("تم إنشاء ملف Google Sheet جديد");
+    if (movedToFolder) parts.push("في المجلد المحدد في Drive");
+    parts.push(`بـ ${fields.length} عمود`);
 
     return {
       ok: true,

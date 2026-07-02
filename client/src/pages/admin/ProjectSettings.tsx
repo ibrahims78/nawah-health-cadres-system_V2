@@ -101,6 +101,14 @@ export function ProjectSettings() {
   };
 
   const createSheet = async () => {
+    if (project?.googleSheetId) {
+      const ok = window.confirm(
+        "سيتم إنشاء ملف Google Sheet جديد تماماً في المجلد المحدد.\n" +
+        "الملف القديم لن يُحذف لكن لن يُستخدم للتسجيل بعد الآن.\n\n" +
+        "هل تريد المتابعة؟"
+      );
+      if (!ok) return;
+    }
     setTesting(true); setTestResult(null); setCreatedSheetUrl(null);
     const res: any = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
     setTestResult(res.message);
