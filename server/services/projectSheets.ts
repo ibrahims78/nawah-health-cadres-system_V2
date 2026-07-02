@@ -17,7 +17,35 @@ async function getSheetsClient(projectId: string, extraScopes: string[] = []) {
   }
 
   const keyJson = decrypt(proj.googleServiceAccountKeyEnc);
-  const credentials = JSON.parse(keyJson);
+  let credentials: any;
+  try {
+    credentials = JSON.parse(keyJson);
+  } catch {
+    throw new Error("ملف JSON للـ Service Account تالف أو غير صالح — تأكد من نسخه كاملاً");
+  }
+
+  // Validate required fields
+  if (credentials.type !== "service_account") {
+    throw new Error(
+      `نوع الاعتماد غير صحيح: "${credentials.type || "غير محدد"}" — يجب أن يكون "service_account". ` +
+      "تأكد أنك نسخت ملف JSON الخاص بـ Service Account وليس API Key."
+    );
+  }
+  if (!credentials.private_key || !credentials.client_email) {
+    throw new Error("ملف JSON ناقص — لا يحتوي على private_key أو client_email");
+  }
+
+  // Fix corrupted newlines: textarea copy-paste may turn \n sequences into literal \\n
+  if (credentials.private_key && !credentials.private_key.includes("\n")) {
+    credentials.private_key = credentials.private_key.replace(/\\n/g, "\n");
+  }
+
+  console.log(
+    "[ProjectSheets] getSheetsClient — email:", credentials.client_email,
+    "| project:", credentials.project_id,
+    "| key_id:", credentials.private_key_id?.slice(0, 8) + "...",
+    "| scopes:", ["spreadsheets", ...extraScopes.map(s => s.split("/").pop())].join(",")
+  );
 
   const auth = new google.auth.GoogleAuth({
     credentials,
