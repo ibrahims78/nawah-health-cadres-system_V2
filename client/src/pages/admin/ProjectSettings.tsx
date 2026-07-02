@@ -103,14 +103,25 @@ export function ProjectSettings() {
   const createSheet = async () => {
     if (project?.googleSheetId) {
       const ok = window.confirm(
-        "سيتم إنشاء ملف Google Sheet جديد تماماً في المجلد المحدد.\n" +
-        "الملف القديم لن يُحذف لكن لن يُستخدم للتسجيل بعد الآن.\n\n" +
+        "سيتم إنشاء ملف Google Sheet جديد في المجلد المحدد.\n" +
+        "الملف القديم لن يُحذف لكن لن يُستخدم بعد الآن.\n\n" +
         "هل تريد المتابعة؟"
       );
       if (!ok) return;
     }
     setTesting(true); setTestResult(null); setCreatedSheetUrl(null);
-    const res: any = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
+
+    // First attempt
+    let res: any = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
+
+    // If quota error — auto-cleanup Drive and retry once
+    if (!res.ok && res.message && /حصة|quota/i.test(res.message)) {
+      setTestResult("⏳ حصة Drive ممتلئة — جارٍ تنظيف الملفات القديمة تلقائياً...");
+      await apiRequest("POST", `/api/projects/${id}/cleanup-drive`, {}).catch(() => null);
+      setTestResult("⏳ اكتمل التنظيف — جارٍ إعادة إنشاء الـ Sheet...");
+      res = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
+    }
+
     setTestResult(res.message);
     if (res.sheetId) {
       qc.invalidateQueries({ queryKey: ["/api/projects", id] });
@@ -459,15 +470,27 @@ export function ProjectSettings() {
             {/* Connection form */}
             <form onSubmit={handleSubmit(d => saveMut.mutate(d))}>
               <Card className="p-5 space-y-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Sheet ID</Label>
-                  <Input {...register("googleSheetId")} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" dir="ltr" data-testid="input-googleSheetId" />
-                  <p className="text-[11px] text-muted-foreground">من رابط الـ Sheet: https://docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit</p>
+
+                {/* Step indicator */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-bold text-blue-700 dark:text-blue-300">كيف يعمل الإنشاء التلقائي؟</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    {[
+                      { n: "1", label: "أدخل بيانات الـ Service Account" },
+                      { n: "2", label: "أدخل Folder ID (اختياري)" },
+                      { n: "3", label: 'اضغط "إنشاء Sheet تلقائياً"' },
+                    ].map(s => (
+                      <div key={s.n} className="flex flex-col items-center gap-1">
+                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">{s.n}</span>
+                        <span className="text-[10px] text-blue-700 dark:text-blue-300 leading-tight">{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-blue-600 dark:text-blue-400">
+                    ✅ النظام سيُنشئ الـ Sheet في المجلد المحدد ويحفظ الـ ID تلقائياً — لا حاجة لأي خطوة يدوية.
+                  </p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">اسم الورقة</Label>
-                  <Input {...register("googleSheetName")} placeholder="بيانات" data-testid="input-googleSheetName" />
-                </div>
+
                 <div className="space-y-1.5">
                   <Label className="text-xs">Service Account Email</Label>
                   <Input {...register("googleServiceAccountEmail")} placeholder="project@appspot.iam.gserviceaccount.com" dir="ltr" data-testid="input-googleServiceAccountEmail" />
@@ -475,7 +498,7 @@ export function ProjectSettings() {
                 <div className="space-y-1.5">
                   <Label className="text-xs flex items-center gap-1.5">
                     Service Account JSON Key
-                    {project?.hasGoogleKey && <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30">محفوظ</Badge>}
+                    {project?.hasGoogleKey && <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30">محفوظ ✓</Badge>}
                   </Label>
                   <Textarea {...register("googleServiceAccountKey")} placeholder='{"type":"service_account","project_id":"...","private_key":"-----BEGIN RSA PRIVATE KEY-----\n..."}' rows={4} dir="ltr" className="font-mono text-xs" data-testid="input-googleServiceAccountKey" />
                   {project?.hasGoogleKey && <p className="text-[11px] text-muted-foreground">اتركه فارغاً للإبقاء على المفتاح الحالي</p>}
@@ -489,7 +512,7 @@ export function ProjectSettings() {
                   </Label>
                   <Input
                     {...register("googleDriveFolderId")}
-                    placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms أو الرابط كاملاً"
+                    placeholder="الصق رابط المجلد أو الـ ID مباشرةً"
                     dir="ltr"
                     data-testid="input-googleDriveFolderId"
                     onPaste={e => {
@@ -502,10 +525,32 @@ export function ProjectSettings() {
                     }}
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    يمكنك لصق رابط المجلد كاملاً أو الـ ID فقط — سيُستخرج تلقائياً.
-                    يجب مشاركة المجلد مع بريد الـ Service Account كـ "محرر"
+                    يمكنك لصق رابط المجلد كاملاً — سيُستخرج الـ ID تلقائياً.
+                    يجب مشاركة المجلد مع بريد الـ Service Account كـ <strong>"محرر"</strong>
                   </p>
                 </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">اسم الورقة</Label>
+                  <Input {...register("googleSheetName")} placeholder="بيانات" data-testid="input-googleSheetName" />
+                </div>
+
+                {/* Sheet ID — auto-filled, read-only display */}
+                {project?.googleSheetId && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      Sheet ID
+                      <Badge variant="secondary" className="text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30">تم إنشاؤه تلقائياً ✓</Badge>
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input value={project.googleSheetId} readOnly dir="ltr" className="font-mono text-xs bg-slate-50 dark:bg-slate-800 text-muted-foreground cursor-default" data-testid="input-googleSheetId" />
+                      <a href={`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`} target="_blank" rel="noopener noreferrer" className="shrink-0" title="فتح الـ Sheet">
+                        <ExternalLink className="h-4 w-4 text-blue-500 hover:text-blue-700" />
+                      </a>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">هذا الـ ID تم حفظه تلقائياً بعد الإنشاء. يمكنك فتح الملف بالأيقونة.</p>
+                  </div>
+                )}
 
                 {testResult && <ResultBox msg={testResult} />}
 
@@ -528,10 +573,6 @@ export function ProjectSettings() {
                     {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Save className="h-4 w-4 ml-1" />}
                     حفظ الإعدادات
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={testSheets} disabled={testing} data-testid="button-test-sheets">
-                    {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <RefreshCw className="h-4 w-4 ml-1" />}
-                    اختبار الاتصال
-                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -541,7 +582,11 @@ export function ProjectSettings() {
                     data-testid="button-create-sheet"
                   >
                     {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
-                    إنشاء Sheet في المجلد
+                    {project?.googleSheetId ? "إنشاء Sheet جديد" : "إنشاء Sheet تلقائياً ✨"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={testSheets} disabled={testing || !project?.hasGoogleKey} data-testid="button-test-sheets">
+                    {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <RefreshCw className="h-4 w-4 ml-1" />}
+                    اختبار الاتصال
                   </Button>
                   <Button
                     type="button"
