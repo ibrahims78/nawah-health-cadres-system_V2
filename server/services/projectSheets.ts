@@ -93,20 +93,43 @@ function sheetRange(name: string, range: string): string {
   return `'${escaped}'!${range}`;
 }
 
-/** Ensure the named sheet tab exists in the spreadsheet; creates it if missing. */
-async function ensureSheetTab(sheets: any, spreadsheetId: string, sheetName: string): Promise<void> {
+/**
+ * Resolve the ACTUAL tab title from the live spreadsheet.
+ * Order: exact match → case-insensitive match → first tab.
+ * If createIfMissing=true and nothing matches, creates the tab and returns desiredName.
+ *
+ * Always use the returned value (not desiredName) in range notation — it is the
+ * exact title the API knows about, so ranges won't be rejected as "Unable to parse".
+ */
+async function resolveSheetTab(
+  sheets: any,
+  spreadsheetId: string,
+  desiredName: string,
+  createIfMissing = false,
+): Promise<string> {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const exists = (meta.data.sheets || []).some(
-    (s: any) => s.properties?.title === sheetName
-  );
-  if (!exists) {
+  const allTabs: string[] = (meta.data.sheets || [])
+    .map((s: any) => s.properties?.title as string)
+    .filter(Boolean);
+
+  // 1. Exact match (fastest path)
+  if (allTabs.includes(desiredName)) return desiredName;
+
+  // 2. Case-insensitive match (handles "بيانات" vs "بيانات")
+  const ci = allTabs.find(t => t.toLowerCase() === desiredName.toLowerCase());
+  if (ci) return ci;
+
+  // 3. Create the tab when caller asks for it (write operations)
+  if (createIfMissing) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
-      requestBody: {
-        requests: [{ addSheet: { properties: { title: sheetName } } }],
-      },
+      requestBody: { requests: [{ addSheet: { properties: { title: desiredName } } }] },
     });
+    return desiredName;
   }
+
+  // 4. Fall back to first tab (read operations — don't create silently)
+  return allTabs[0] ?? desiredName;
 }
 
 /** Ensure header row exists and matches field labels; rewrites if different. */
@@ -139,9 +162,8 @@ export async function appendRecordToSheet(
     if (!proj.googleSheetId) return null;
 
     const fields = await getProjectFields(projectId);
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
-
-    await ensureSheetTab(sheets, proj.googleSheetId, sheetName);
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName, true);
     await ensureHeaders(sheets, proj.googleSheetId, sheetName, fields);
 
     const row = [String(seqNum), ...fields.map(f => String(recordData[f.key] ?? ""))];
@@ -174,7 +196,8 @@ export async function updateRecordRow(
     if (!proj.googleSheetId) return;
 
     const fields = await getProjectFields(projectId);
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName);
     const row = [String(seqNum), ...fields.map(f => String(recordData[f.key] ?? ""))];
 
     await sheets.spreadsheets.values.update({
@@ -193,11 +216,13 @@ export async function deleteRecordRow(projectId: string, rowIndex: number): Prom
     const { sheets, proj } = await getSheetsClient(projectId);
     if (!proj.googleSheetId) return false;
 
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: proj.googleSheetId });
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
-    const sheetMeta = spreadsheet.data.sheets?.find(
-      (s: any) => s.properties?.title === sheetName
-    );
+    const allSheets = spreadsheet.data.sheets || [];
+    const sheetName = allSheets.find((s: any) => s.properties?.title === desiredName)?.properties?.title
+      ?? allSheets.find((s: any) => s.properties?.title?.toLowerCase() === desiredName.toLowerCase())?.properties?.title
+      ?? allSheets[0]?.properties?.title;
+    const sheetMeta = allSheets.find((s: any) => s.properties?.title === sheetName);
     if (!sheetMeta?.properties?.sheetId) return false;
 
     await sheets.spreadsheets.batchUpdate({
@@ -328,7 +353,8 @@ export async function fixProjectSheetHeaders(
     if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
 
     const fields = await getProjectFields(projectId);
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName, true);
     const headers = ["م", ...fields.map(f => f.label)];
 
     await sheets.spreadsheets.values.update({
@@ -338,7 +364,7 @@ export async function fixProjectSheetHeaders(
       requestBody: { values: [headers] },
     });
 
-    return { ok: true, message: `✅ تم تصحيح الترويسات — ${headers.length} عمود`, count: headers.length };
+    return { ok: true, message: `✅ تم تصحيح الترويسات — ${headers.length} عمود (التبويب: "${sheetName}")`, count: headers.length };
   } catch (err: any) {
     return { ok: false, message: `❌ ${err.message}` };
   }
@@ -353,7 +379,8 @@ export async function checkProjectSheetColumns(projectId: string): Promise<{
     if (!proj.googleSheetId) return { ok: false, message: "لم يتم إدخال Sheet ID" };
 
     const fields = await getProjectFields(projectId);
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName);
     const expected = ["م", ...fields.map(f => f.label)];
 
     const res = await sheets.spreadsheets.values.get({
@@ -388,7 +415,8 @@ export async function importFromProjectSheet(
     }
 
     const fields = await getProjectFields(projectId);
-    const sheetName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName);
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: proj.googleSheetId,
