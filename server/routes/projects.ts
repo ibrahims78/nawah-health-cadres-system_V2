@@ -77,7 +77,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/", requireAdmin, async (req: Request, res: Response) => {
+router.post("/", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     const { name, description, formTitle, formSubtitle, invitationCode, steps, fields } = req.body;
     if (!name) return res.status(400).json({ error: "اسم المشروع مطلوب" });
@@ -129,7 +129,7 @@ router.patch("/global-settings", requireAdmin, async (req: Request, res: Respons
   }
 });
 
-router.patch("/:id", requireAdmin, async (req: Request, res: Response) => {
+router.patch("/:id", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const update: any = { updatedAt: new Date() };
@@ -159,7 +159,7 @@ router.patch("/:id", requireAdmin, async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/:id", requireAdmin, async (req: Request, res: Response) => {
+router.delete("/:id", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     await db.delete(projects).where(eq(projects.id, String(req.params.id)));
     res.json({ ok: true });
@@ -170,7 +170,7 @@ router.delete("/:id", requireAdmin, async (req: Request, res: Response) => {
 
 // ─── EXCEL PARSE ─────────────────────────────────────────────
 
-router.post("/parse-excel", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+router.post("/parse-excel", requireEditorOrAdmin, upload.single("file"), async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ error: "لم يتم رفع ملف" });
 
@@ -227,7 +227,7 @@ router.get("/:id/fields", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/:id/fields", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/fields", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     const fields: any[] = req.body.fields;
     await db.delete(projectFields).where(eq(projectFields.projectId, String(req.params.id)));
@@ -641,17 +641,17 @@ router.get("/:id/stats/distributions", requireAuth, async (req: Request, res: Re
 
 // ─── SHEET TOOLS ─────────────────────────────────────────────
 
-router.post("/:id/fix-sheet-headers", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/fix-sheet-headers", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const result = await fixProjectSheetHeaders(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/check-sheet-columns", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/check-sheet-columns", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const result = await checkProjectSheetColumns(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/import-from-sheets", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/import-from-sheets", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const { syncDeleted } = req.body;
   const result = await importFromProjectSheet(String(req.params.id), !!syncDeleted);
   res.json(result);
@@ -659,12 +659,12 @@ router.post("/:id/import-from-sheets", requireAdmin, async (req: Request, res: R
 
 // ─── SETTINGS ACTIONS ────────────────────────────────────────
 
-router.post("/:id/test-sheets", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/test-sheets", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const result = await testProjectSheetsConnection(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/create-sheet", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/create-sheet", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const projectId = String(req.params.id);
   cancelSheetCreationJob(projectId); // cancel any running background job first
   const result = await createProjectSheet(projectId);
@@ -680,13 +680,13 @@ router.post("/:id/create-sheet", requireAdmin, async (req: Request, res: Respons
   res.json(result);
 });
 
-router.post("/:id/cleanup-drive", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/cleanup-drive", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const { cleanupServiceAccountDrive } = await import("../services/projectSheets.js");
   const result = await cleanupServiceAccountDrive(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/test-telegram", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/test-telegram", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     const { token, chatId } = req.body;
     let botToken = token;
@@ -702,7 +702,7 @@ router.post("/:id/test-telegram", requireAdmin, async (req: Request, res: Respon
   }
 });
 
-router.post("/:id/telegram-updates", requireAdmin, async (req: Request, res: Response) => {
+router.post("/:id/telegram-updates", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     let botToken = token;
@@ -718,7 +718,7 @@ router.post("/:id/telegram-updates", requireAdmin, async (req: Request, res: Res
   }
 });
 
-router.post("/test-email", requireAdmin, async (req: Request, res: Response) => {
+router.post("/test-email", requireEditorOrAdmin, async (req: Request, res: Response) => {
   const { host, port, user, pass } = req.body;
   const result = await testEmailConnection(
     host || user || pass ? { host, port: Number(port) || 587, user, pass } : undefined

@@ -81,7 +81,7 @@ function AppRoutes() {
           <ProtectedRoute><Projects /></ProtectedRoute>
         </Route>
         <Route path="/admin/projects/new">
-          <ProtectedRoute minRole="admin"><CreateProject /></ProtectedRoute>
+          <ProtectedRoute minRole="editor"><CreateProject /></ProtectedRoute>
         </Route>
 
         {/* Admin — Project scoped pages */}
@@ -104,7 +104,7 @@ function AppRoutes() {
           <ProtectedRoute><ProjectExport /></ProtectedRoute>
         </Route>
         <Route path="/admin/projects/:id/settings">
-          <ProtectedRoute minRole="admin"><ProjectSettings /></ProtectedRoute>
+          <ProtectedRoute minRole="editor"><ProjectSettings /></ProtectedRoute>
         </Route>
 
         {/* Global settings */}

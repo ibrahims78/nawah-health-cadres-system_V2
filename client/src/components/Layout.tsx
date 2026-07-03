@@ -39,7 +39,7 @@ export function Layout({ children, projectId }: LayoutProps) {
     { href: `/admin/projects/${activeProject.id}/dashboard`, icon: LayoutDashboard, label: "الرئيسية", labelEn: "Dashboard" },
     { href: `/admin/projects/${activeProject.id}/records`, icon: Users, label: "السجلات", labelEn: "Records" },
     { href: `/admin/projects/${activeProject.id}/export`, icon: Download, label: "التصدير", labelEn: "Export" },
-    { href: `/admin/projects/${activeProject.id}/settings`, icon: Settings, label: "إعدادات المشروع", labelEn: "Project Settings", adminOnly: true },
+    { href: `/admin/projects/${activeProject.id}/settings`, icon: Settings, label: "إعدادات المشروع", labelEn: "Project Settings" },
   ] : [];
 
   const globalNav = [
@@ -99,13 +99,15 @@ export function Layout({ children, projectId }: LayoutProps) {
                   <span className="truncate">{p.name}</span>
                 </button>
               ))}
-              <button
-                onClick={() => { nav("/admin/projects/new"); setProjectPickerOpen(false); setMobileOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-primary hover:bg-primary/5 border-t border-slate-100 dark:border-slate-600"
-              >
-                <Plus className="h-3 w-3" />
-                <span>{isAr ? "مشروع جديد" : "New Project"}</span>
-              </button>
+              {user?.role !== "viewer" && (
+                <button
+                  onClick={() => { nav("/admin/projects/new"); setProjectPickerOpen(false); setMobileOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-primary hover:bg-primary/5 border-t border-slate-100 dark:border-slate-600"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>{isAr ? "مشروع جديد" : "New Project"}</span>
+                </button>
+              )}
             </div>
           )}
         </div>

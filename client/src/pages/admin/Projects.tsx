@@ -22,6 +22,7 @@ export function Projects() {
   const ar = lang === "ar";
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const canCreateProject = user?.role === "admin" || user?.role === "editor";
   const [, nav] = useLocation();
   const qc = useQueryClient();
   const { setCurrentProject } = useProject();
@@ -72,7 +73,7 @@ export function Projects() {
               {isLoading ? (ar ? "جاري التحميل..." : "Loading...") : (ar ? `${projects.length} مشروع` : `${projects.length} project${projects.length !== 1 ? "s" : ""}`)}
             </p>
           </div>
-          {isAdmin && (
+          {canCreateProject && (
             <Button onClick={() => nav("/admin/projects/new")} data-testid="button-new-project">
               <Plus className="h-4 w-4 ml-2" />
               {ar ? "مشروع جديد" : "New Project"}
@@ -110,7 +111,7 @@ export function Projects() {
               {ar ? "لا يوجد مشاريع بعد" : "No projects yet"}
             </h3>
             <p className="text-sm text-muted-foreground mb-6">{ar ? "أنشئ مشروعك الأول لبدء جمع البيانات" : "Create your first project to start collecting data"}</p>
-            {isAdmin && (
+            {canCreateProject && (
               <Button onClick={() => nav("/admin/projects/new")}>
                 <Plus className="h-4 w-4 ml-2" />
                 {ar ? "إنشاء مشروع" : "Create Project"}
