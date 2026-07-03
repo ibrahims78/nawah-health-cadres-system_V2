@@ -18,9 +18,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 // ─── PROJECTS CRUD ───────────────────────────────────────────
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   try {
-    const list = await db.select().from(projects).orderBy(desc(projects.createdAt));
+    const role = (req.session as any).role;
+    const userId = (req.session as any).userId;
+    const list = role === "admin"
+      ? await db.select().from(projects).orderBy(desc(projects.createdAt))
+      : await db.select().from(projects)
+          .where(eq(projects.createdBy, userId))
+          .orderBy(desc(projects.createdAt));
     res.json(list);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
