@@ -250,11 +250,20 @@ export async function testProjectSheetsConnection(
       await db.update(projects).set({ googleSheetId: spreadsheetId }).where(eq(projects.id, projectId));
     }
 
-    // ③ Read check
-    await sheets.spreadsheets.get({ spreadsheetId });
+    // ③ Read check — also fetches the sheet list so we can use the real tab name
+    const spreadsheetMeta = await sheets.spreadsheets.get({ spreadsheetId });
+
+    // Determine the real tab name: prefer the configured name, fallback to first tab, then bare range
+    const configuredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const realTabs: string[] = (spreadsheetMeta.data.sheets || []).map(
+      (s: any) => s.properties?.title as string
+    ).filter(Boolean);
+    const tabExists = realTabs.includes(configuredName);
+    // Use the first available tab for the write-test if configured tab doesn't exist yet
+    const testTab = tabExists ? configuredName : (realTabs[0] || configuredName);
+    const tempRange = sheetRange(testTab, "ZZ1");
 
     // ④ Write check — use an out-of-the-way cell to avoid disturbing data
-    const tempRange = `'Sheet1'!ZZ1`;
     try {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -396,9 +405,12 @@ export async function importFromProjectSheet(
     }
 
     const { projectRecords: prTable } = await import("../../shared/schema.js");
-    const { eq: eqFn, and: andFn } = await import("drizzle-orm");
+    const { eq: eqFn, and: andFn, notInArray } = await import("drizzle-orm");
 
-    let added = 0, updated = 0, skipped = 0;
+    let added = 0, updated = 0, skipped = 0, deleted = 0;
+
+    // Collect all valid seqNums seen in the Sheet (used by syncDeleted below)
+    const sheetSeqNums: number[] = [];
 
     for (const row of rows.slice(1)) {
       if (!row || row.length === 0) { skipped++; continue; }
@@ -410,6 +422,8 @@ export async function importFromProjectSheet(
       if (Object.keys(data).length === 0) { skipped++; continue; }
 
       if (seqNum && !isNaN(seqNum)) {
+        sheetSeqNums.push(seqNum);
+
         const existing = await db.select({ id: prTable.id })
           .from(prTable)
           .where(andFn(eqFn(prTable.projectId, projectId), eqFn(prTable.sequentialNumber, seqNum)));
@@ -430,9 +444,25 @@ export async function importFromProjectSheet(
       }
     }
 
+    // syncDeleted: remove DB records whose seqNum is not present in the Sheet at all
+    if (syncDeleted && sheetSeqNums.length > 0) {
+      const toDelete = await db.select({ id: prTable.id })
+        .from(prTable)
+        .where(andFn(
+          eqFn(prTable.projectId, projectId),
+          notInArray(prTable.sequentialNumber, sheetSeqNums)
+        ));
+      for (const rec of toDelete) {
+        await db.delete(prTable).where(eqFn(prTable.id, rec.id));
+        deleted++;
+      }
+    }
+
+    const parts = [`${added} مُضاف`, `${updated} مُحدَّث`, `${skipped} مُتجاوَز`];
+    if (syncDeleted) parts.push(`${deleted} مُحذوف`);
     return {
       ok: true,
-      message: `✅ اكتمل: ${added} مُضاف، ${updated} مُحدَّث، ${skipped} مُتجاوَز`,
+      message: `✅ اكتمل: ${parts.join("، ")}`,
       added, updated, skipped,
     };
   } catch (err: any) {
