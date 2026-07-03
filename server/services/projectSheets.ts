@@ -250,20 +250,43 @@ export async function testProjectSheetsConnection(
       await db.update(projects).set({ googleSheetId: spreadsheetId }).where(eq(projects.id, projectId));
     }
 
-    // ③ Read check — also fetches the sheet list so we can use the real tab name
-    const spreadsheetMeta = await sheets.spreadsheets.get({ spreadsheetId });
+    // ③ Read check — also fetches real tab names so the write test uses the correct tab
+    let spreadsheetMeta: any;
+    try {
+      spreadsheetMeta = await sheets.spreadsheets.get({ spreadsheetId });
+    } catch (readErr: any) {
+      const rCode: number = readErr?.code ?? readErr?.status ?? readErr?.response?.status ?? 0;
+      const rMsg: string = readErr?.message || "";
+      console.error("[ProjectSheets] test — read check failed:", rCode, rMsg);
+      if (rCode === 403 || /forbidden|permission/i.test(rMsg)) {
+        return { ok: false, message: `❌ صلاحية مرفوضة (403) — تأكد من مشاركة الملف مع: ${saEmail || "بريد الـ Service Account"}` };
+      }
+      if (rCode === 404 || /not found/i.test(rMsg)) {
+        return { ok: false, message: "❌ الملف غير موجود (404) — أعد إنشاء الملف وشاركه مع الـ Service Account" };
+      }
+      if (rCode === 400 || /invalid argument|INVALID_ARGUMENT/i.test(rMsg)) {
+        return { ok: false, message: "❌ معرف الـ Sheet غير صالح (400) — تأكد من نسخ الرابط أو الـ ID بشكل صحيح" };
+      }
+      return { ok: false, message: `❌ فشل فحص القراءة: ${rMsg}` };
+    }
 
-    // Determine the real tab name: prefer the configured name, fallback to first tab, then bare range
+    // Determine the real tab name to use for the write test
     const configuredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
-    const realTabs: string[] = (spreadsheetMeta.data.sheets || []).map(
+    const allSheetsMeta: any[] = spreadsheetMeta.data.sheets || [];
+    const realTabs: string[] = allSheetsMeta.map(
       (s: any) => s.properties?.title as string
     ).filter(Boolean);
-    const tabExists = realTabs.includes(configuredName);
-    // Use the first available tab for the write-test if configured tab doesn't exist yet
-    const testTab = tabExists ? configuredName : (realTabs[0] || configuredName);
-    const tempRange = sheetRange(testTab, "ZZ1");
+    // Use first available tab if the configured one doesn't exist yet (created on first real write)
+    const testTab = realTabs.includes(configuredName) ? configuredName : (realTabs[0] || configuredName);
 
-    // ④ Write check — use an out-of-the-way cell to avoid disturbing data
+    // ④ Write check — use the LAST existing row of the sheet so we never expand its grid.
+    //    gridProperties.rowCount is the current allocated row count; writing to exactly that
+    //    row is within bounds and will not resize the sheet permanently.
+    const sheetTabMeta = allSheetsMeta.find(
+      (s: any) => s.properties?.title === testTab
+    ) ?? allSheetsMeta[0];
+    const existingRowCount: number = sheetTabMeta?.properties?.gridProperties?.rowCount ?? 1000;
+    const tempRange = sheetRange(testTab, `A${existingRowCount}`);
     try {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -271,43 +294,26 @@ export async function testProjectSheetsConnection(
         valueInputOption: "RAW",
         requestBody: { values: [["__test__"]] },
       });
-      // Clear immediately — ignore failure (non-critical)
       await sheets.spreadsheets.values.clear({ spreadsheetId, range: tempRange }).catch(() => {});
     } catch (writeErr: any) {
       const wCode: number = writeErr?.code ?? writeErr?.status ?? writeErr?.response?.status ?? 0;
-      if (wCode === 403 || /forbidden|permission/i.test(writeErr?.message || "")) {
-        return {
-          ok: false,
-          message: `❌ صلاحية مرفوضة (403) — تأكد من مشاركة الملف مع: ${saEmail || "بريد الـ Service Account"}`,
-        };
+      const wMsg: string = writeErr?.message || "";
+      console.error("[ProjectSheets] test — write check failed:", wCode, wMsg);
+      if (wCode === 403 || /forbidden|permission/i.test(wMsg)) {
+        return { ok: false, message: `❌ صلاحية الكتابة مرفوضة (403) — تأكد من إعطاء الـ Service Account دور «محرر» وليس «قارئ»\nالبريد: ${saEmail}` };
       }
-      throw writeErr; // let the outer catch handle unexpected errors
+      if (wCode === 400 || /invalid argument|INVALID_ARGUMENT/i.test(wMsg)) {
+        return { ok: false, message: `❌ فشل اختبار الكتابة (400) — تأكد من اسم التبويب واتصالك بالإنترنت\nالتبويب المستخدم: "${testTab}"` };
+      }
+      return { ok: false, message: `❌ فشل فحص الكتابة: ${wMsg}` };
     }
 
-    return { ok: true, message: "✅ الاتصال ناجح — قراءة وكتابة مؤكّدتان" };
+    return { ok: true, message: `✅ الاتصال ناجح — قراءة وكتابة مؤكّدتان\nالتبويب: "${testTab}" | ${realTabs.length} تبويب في الملف` };
 
   } catch (err: any) {
-    const code: number = err?.code ?? err?.status ?? err?.response?.status ?? 0;
-    const msg: string = err?.message || "";
-
-    const is400 = code === 400 || /invalid argument|INVALID_ARGUMENT/i.test(msg);
-    const is403 = code === 403 || /forbidden|permission/i.test(msg);
-    const is404 = code === 404 || /not found/i.test(msg);
-
-    if (is400) {
-      return { ok: false, message: "❌ معرف الـ Sheet غير صالح (400) — تأكد من نسخ الرابط أو الـ ID بشكل صحيح" };
-    }
-    if (is403) {
-      return {
-        ok: false,
-        message: `❌ صلاحية مرفوضة (403) — تأكد من مشاركة الملف مع: ${saEmail || "بريد الـ Service Account"}`,
-      };
-    }
-    if (is404) {
-      return { ok: false, message: "❌ الملف غير موجود (404) — أعد إنشاء الملف وشاركه" };
-    }
-
-    // JSON / key errors already carry descriptive messages from getSheetsClient
+    const msg: string = err?.message || String(err);
+    console.error("[ProjectSheets] test — unexpected error:", msg);
+    // JSON / key errors from getSheetsClient carry descriptive Arabic messages already
     return { ok: false, message: `❌ ${msg}` };
   }
 }
@@ -444,7 +450,10 @@ export async function importFromProjectSheet(
       }
     }
 
-    // syncDeleted: remove DB records whose seqNum is not present in the Sheet at all
+    // syncDeleted: remove DB records whose seqNum is not present in the Sheet at all.
+    // Safety guard: only delete when we found ≥1 valid rows in the Sheet. If the Sheet
+    // is empty or all rows lack seq numbers, we treat it as "sheet not ready" and skip
+    // deletion to avoid accidentally wiping the entire DB.
     if (syncDeleted && sheetSeqNums.length > 0) {
       const toDelete = await db.select({ id: prTable.id })
         .from(prTable)
