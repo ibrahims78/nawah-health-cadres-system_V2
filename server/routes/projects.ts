@@ -5,7 +5,7 @@ import { eq, desc, count, gte, and, ilike, or, gt, sql } from "drizzle-orm";
 import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/auth.js";
 import { encrypt, decrypt } from "../services/crypto.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
-import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, createProjectSheet, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, isSheetCreationPending, startBackgroundSheetCreation, cancelSheetCreationJob } from "../services/projectSheets.js";
+import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, extractSpreadsheetId } from "../services/projectSheets.js";
 import { testTelegramBot, getTelegramUpdates } from "../services/telegram.js";
 import { sendInvitationEmail, testEmailConnection } from "../services/email.js";
 import { v4 as uuidv4 } from "uuid";
@@ -95,7 +95,6 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       ...safe,
       hasGoogleKey: !!googleServiceAccountKeyEnc,
       hasTelegramToken: !!telegramBotTokenEnc,
-      sheetCreationPending: isSheetCreationPending(String(req.params.id)),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -170,7 +169,6 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
 
     // Sanitize Sheet ID: accept full URL or bare ID, always store bare ID
     if ("googleSheetId" in update && update.googleSheetId) {
-      const { extractSpreadsheetId } = await import("../services/projectSheets.js");
       update.googleSheetId = extractSpreadsheetId(update.googleSheetId);
     }
 
@@ -706,28 +704,6 @@ router.post("/:id/import-from-sheets", requireEditorOrAdmin, requireProjectOwner
 
 router.post("/:id/test-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
   const result = await testProjectSheetsConnection(String(req.params.id));
-  res.json(result);
-});
-
-router.post("/:id/create-sheet", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
-  const projectId = String(req.params.id);
-  cancelSheetCreationJob(projectId); // cancel any running background job first
-  const result = await createProjectSheet(projectId);
-  // If quota error — start background retry loop and return pending immediately
-  if (!result.ok && result.message && /quota/i.test(result.message)) {
-    startBackgroundSheetCreation(projectId);
-    return res.json({
-      ok: true,
-      pending: true,
-      message: "⏳ حصة Drive الـ SA تحتاج وقتاً للتحديث — بدأ النظام إنشاء الـ Sheet تلقائياً في الخلفية.\nسيُحدَّث الـ ID تلقائياً خلال دقيقة إلى عشر دقائق.",
-    });
-  }
-  res.json(result);
-});
-
-router.post("/:id/cleanup-drive", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
-  const { cleanupServiceAccountDrive } = await import("../services/projectSheets.js");
-  const result = await cleanupServiceAccountDrive(String(req.params.id));
   res.json(result);
 });
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -28,11 +28,8 @@ export function ProjectSettings() {
   const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram">("form");
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
-  const [createdSheetUrl, setCreatedSheetUrl] = useState<string | null>(null);
   const [fields, setFields] = useState<ProjectField[]>([]);
   const [showGuide, setShowGuide] = useState(false);
-
-  const [showManualSheetId, setShowManualSheetId] = useState(false);
 
   // Sheets-specific state
   const [checkResult, setCheckResult] = useState<{
@@ -42,7 +39,7 @@ export function ProjectSettings() {
   const [fixResult, setFixResult] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<any | null>(null);
   const [syncDeleted, setSyncDeleted] = useState(false);
-  const [sheetsLoading, setSheetsLoading] = useState<"check" | "fix" | "import" | "cleanup" | null>(null);
+  const [sheetsLoading, setSheetsLoading] = useState<"check" | "fix" | "import" | null>(null);
 
   // Telegram-specific state
   const [chatIdLoading, setChatIdLoading] = useState(false);
@@ -52,17 +49,7 @@ export function ProjectSettings() {
   const { data: project } = useQuery<any>({
     queryKey: ["/api/projects", id],
     queryFn: () => fetch(`/api/projects/${id}`, { credentials: "include" }).then(r => r.json()),
-    refetchInterval: (query: any) => query.state.data?.sheetCreationPending ? 20_000 : false,
   });
-
-  const prevSheetPending = useRef(false);
-  useEffect(() => {
-    if (prevSheetPending.current && project?.googleSheetId && !project?.sheetCreationPending) {
-      setTestResult(isAr ? "✅ تم إنشاء الـ Sheet تلقائياً بنجاح!" : "✅ Google Sheet automatically created successfully!");
-      setCreatedSheetUrl(`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`);
-    }
-    prevSheetPending.current = !!project?.sheetCreationPending;
-  }, [project?.sheetCreationPending, project?.googleSheetId, isAr]);
 
   const { data: rawFields = [] } = useQuery<ProjectField[]>({
     queryKey: ["/api/projects", id, "fields"],
@@ -82,7 +69,6 @@ export function ProjectSettings() {
         steps: Array.isArray(project.steps) ? project.steps.join("\n") : "",
         googleSheetId: project.googleSheetId, googleSheetName: project.googleSheetName,
         googleServiceAccountEmail: project.googleServiceAccountEmail,
-        googleDriveFolderId: project.googleDriveFolderId,
         telegramChatId: project.telegramChatId,
       });
     }
@@ -118,55 +104,6 @@ export function ProjectSettings() {
     setTesting(true); setTestResult(null);
     const res: any = await apiRequest("POST", `/api/projects/${id}/test-sheets`, {}).catch(e => ({ message: `❌ ${e.message}` }));
     setTestResult(res.message); setTesting(false);
-  };
-
-  const createSheet = async () => {
-    if (project?.googleSheetId) {
-      const ok = window.confirm(
-        isAr ? "سيتم إنشاء ملف Google Sheet جديد في المجلد المحدد.\n" +
-        "الملف القديم لن يُحذف لكن لن يُستخدم بعد الآن.\n\n" +
-        "هل تريد المتابعة؟" :
-        "A new Google Sheet will be created in the specified folder.\n" +
-        "The old file will not be deleted but will no longer be used.\n\n" +
-        "Do you want to continue?"
-      );
-      if (!ok) return;
-    }
-    setTesting(true); setTestResult(null); setCreatedSheetUrl(null);
-
-    let res: any = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
-
-    if (!res.ok && res.message && /حصة|quota/i.test(res.message)) {
-      setTestResult(isAr ? "⏳ حصة Drive ممتلئة — جارٍ تنظيف الملفات القديمة تلقائياً..." : "⏳ Drive quota full — cleaning up old files automatically...");
-      await apiRequest("POST", `/api/projects/${id}/cleanup-drive`, {}).catch(() => null);
-      setTestResult(isAr ? "⏳ اكتمل التنظيف — جارٍ إعادة إنشاء الـ Sheet..." : "⏳ Cleanup complete — recreating the Sheet...");
-      res = await apiRequest("POST", `/api/projects/${id}/create-sheet`, {}).catch(e => ({ message: `❌ ${e.message}` }));
-    }
-
-    setTestResult(res.message);
-    if (res.sheetId) {
-      qc.invalidateQueries({ queryKey: ["/api/projects", id] });
-      if (res.sheetUrl) setCreatedSheetUrl(res.sheetUrl);
-    }
-    if (res.needsManualId) setShowManualSheetId(true);
-    setTesting(false);
-  };
-
-  const cleanupDrive = async () => {
-    if (!window.confirm(
-      isAr ? "سيقوم هذا بفحص جميع الملفات في Drive الـ Service Account (جميع الأنواع) وحذف ما لم يرتبط بأي مشروع.\n\n" +
-      "✅ محمي: الملفات المرتبطة بمشاريع نشطة لن تُحذف أبداً.\n" +
-      "❌ سيُحذف: كل ملف آخر (تجريبي، مؤقت، أو غير مستخدم).\n\n" +
-      "هل تريد المتابعة؟" :
-      "This will scan all files in the Service Account's Drive and delete those not linked to any project.\n\n" +
-      "✅ Protected: Files linked to active projects will never be deleted.\n" +
-      "❌ Will be deleted: Every other file (test, temporary, or unused).\n\n" +
-      "Do you want to continue?"
-    )) return;
-    setSheetsLoading("cleanup"); setTestResult(null);
-    const res: any = await apiRequest("POST", `/api/projects/${id}/cleanup-drive`, {}).catch(e => ({ message: `❌ ${e.message}` }));
-    setTestResult(res.message);
-    setSheetsLoading(null);
   };
 
   const checkColumns = async () => {
@@ -418,13 +355,25 @@ export function ProjectSettings() {
 
                   {/* Section A: Google Cloud */}
                   <div className="space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-primary">{isAr ? "أ — إعداد Google Cloud Console" : "A — Google Cloud Console Setup"}</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">
+                      {isAr ? "أ — إعداد Google Cloud Console (مرة واحدة)" : "A — Google Cloud Console Setup (once)"}
+                    </p>
                     {[
-                      { n: 1, title: isAr ? "إنشاء مشروع Google Cloud" : "Create Google Cloud Project", desc: isAr ? 'انتقل إلى console.cloud.google.com → أنشئ مشروعاً جديداً أو اختر مشروعاً موجوداً.' : 'Go to console.cloud.google.com → Create a new project or select an existing one.' },
-                      { n: 2, title: isAr ? "تفعيل Google Sheets API" : "Enable Google Sheets API", desc: isAr ? 'APIs & Services → Enable APIs → ابحث عن "Google Sheets API" وفعّله.' : 'APIs & Services → Enable APIs → Search for "Google Sheets API" and enable it.' },
-                      { n: 3, title: isAr ? "تفعيل Google Drive API" : "Enable Google Drive API", desc: isAr ? 'APIs & Services → Enable APIs → ابحث عن "Google Drive API" وفعّله. (مطلوب للإنشاء التلقائي في مجلد)' : 'APIs & Services → Enable APIs → Search for "Google Drive API" and enable it (required for automatic folder creation).' },
-                      { n: 4, title: isAr ? "إنشاء Service Account" : "Create Service Account", desc: isAr ? 'APIs & Services → Credentials → Create Credentials → Service Account → أدخل اسماً وأنشئه.' : 'APIs & Services → Credentials → Create Credentials → Service Account → Enter a name and create.' },
-                      { n: 5, title: isAr ? "تحميل مفتاح JSON" : "Download JSON Key", desc: isAr ? 'افتح الـ Service Account → Keys → Add Key → Create new key → اختر JSON → تحميل. احفظ الملف في مكان آمن.' : 'Open the Service Account → Keys → Add Key → Create new key → Select JSON → Download. Keep this file safe.' },
+                      {
+                        n: 1,
+                        title: isAr ? "إنشاء مشروع Google Cloud" : "Create a Google Cloud project",
+                        desc: isAr ? "انتقل إلى console.cloud.google.com → أنشئ مشروعاً جديداً أو اختر مشروعاً موجوداً." : "Go to console.cloud.google.com → create a new project or choose an existing one.",
+                      },
+                      {
+                        n: 2,
+                        title: isAr ? "تفعيل Google Sheets API فقط" : "Enable Google Sheets API only",
+                        desc: isAr ? 'APIs & Services → Enable APIs → ابحث عن "Google Sheets API" وفعّله. ⛔ لا حاجة لـ Google Drive API.' : 'APIs & Services → Enable APIs → search "Google Sheets API" and enable it. ⛔ Google Drive API is not required.',
+                      },
+                      {
+                        n: 3,
+                        title: isAr ? "إنشاء Service Account وتحميل مفتاح JSON" : "Create a Service Account and download JSON key",
+                        desc: isAr ? "APIs & Services → Credentials → Create Credentials → Service Account → افتحه → Keys → Add Key → JSON → تحميل." : "APIs & Services → Credentials → Create Credentials → Service Account → open it → Keys → Add Key → JSON → Download.",
+                      },
                     ].map(step => (
                       <div key={step.n} className="flex gap-3">
                         <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
@@ -438,13 +387,61 @@ export function ProjectSettings() {
 
                   <div className="h-px bg-slate-100 dark:bg-slate-700" />
 
-                  {/* Section B: Integration */}
+                  {/* Section B: Drive setup */}
                   <div className="space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-primary">{isAr ? "ب — ربط الـ Service Account بالمشروع" : "B — Link Service Account to Project"}</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">
+                      {isAr ? "ب — إعداد ملف Google Sheet (لكل مشروع)" : "B — Prepare the Google Sheet (per project)"}
+                    </p>
                     {[
-                      { n: 1, title: isAr ? "إدخال البريد الإلكتروني" : "Enter Email", desc: isAr ? 'انسخ البريد الخاص بالـ Service Account وألصقه في حقل "بريد الـ Service Account" بالأسفل.' : 'Copy the Service Account email and paste it in the "Service Account Email" field below.' },
-                      { n: 2, title: isAr ? "إدخال المجلد (اختياري)" : "Enter Folder (Optional)", desc: isAr ? 'إذا أردت إنشاء الملفات في مجلد محدد، أدخل ID المجلد وأعطِ صلاحية Editor للبريد الإلكتروني لهذا المجلد في Drive.' : 'If you want files created in a specific folder, enter the Folder ID and give Editor permission to the email for this folder in Drive.' },
-                      { n: 3, title: isAr ? "إنشاء الـ Sheet" : "Create Sheet", desc: isAr ? 'اضغط على "إنشاء ملف Sheet جديد" بالأسفل. سيقوم النظام بإنشاء ملف متوافق تلقائياً.' : 'Click "Create New Sheet" below. The system will create a compatible file automatically.' },
+                      {
+                        n: 1,
+                        title: isAr ? "أنشئ ملف Google Sheet في حسابك الشخصي" : "Create a Google Sheet in your own account",
+                        desc: isAr ? "افتح drive.google.com → جديد → Google Sheets → أعطِه اسماً مناسباً." : "Open drive.google.com → New → Google Sheets → give it a name.",
+                      },
+                      {
+                        n: 2,
+                        title: isAr ? "شارك الملف مع بريد الـ Service Account" : "Share the file with the Service Account email",
+                        desc: isAr ? "داخل الـ Sheet: مشاركة → أضف بريد الـ SA (client_email من ملف JSON) → صلاحية «محرر» → إرسال." : "Inside the Sheet: Share → add the SA email (client_email from the JSON) → Editor role → Send.",
+                      },
+                      {
+                        n: 3,
+                        title: isAr ? "انسخ رابط الملف أو معرّفه" : "Copy the file link or its ID",
+                        desc: isAr ? "انسخ الرابط الكامل من شريط العنوان — التطبيق يستخرج الـ ID تلقائياً." : "Copy the full URL from the address bar — the app extracts the ID automatically.",
+                      },
+                    ].map(step => (
+                      <div key={step.n} className="flex gap-3">
+                        <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{step.title}</p>
+                          <p className="text-xs text-muted-foreground">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="h-px bg-slate-100 dark:bg-slate-700" />
+
+                  {/* Section C: App settings */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">
+                      {isAr ? "ج — إدخال الإعدادات في التطبيق" : "C — Enter settings in the app"}
+                    </p>
+                    {[
+                      {
+                        n: 1,
+                        title: isAr ? "بريد الـ Service Account" : "Service Account email",
+                        desc: isAr ? "أدخل client_email من ملف JSON في الحقل المخصص." : "Enter the client_email from the JSON file in the dedicated field.",
+                      },
+                      {
+                        n: 2,
+                        title: isAr ? "مفتاح JSON" : "JSON key",
+                        desc: isAr ? "الصق محتوى ملف JSON كاملاً في حقل المفتاح — يُشفَّر قبل الحفظ ولا يُعرض مجدداً." : "Paste the full JSON file content in the key field — it is encrypted before saving and never shown again.",
+                      },
+                      {
+                        n: 3,
+                        title: isAr ? "رابط الـ Sheet أو معرّفه" : "Sheet link or ID",
+                        desc: isAr ? "الصق الرابط الكامل أو الـ ID المجرد — احفظ الإعدادات ثم اضغط «اختبار الاتصال»." : "Paste the full link or bare ID — save settings then click «Test Connection».",
+                      },
                     ].map(step => (
                       <div key={step.n} className="flex gap-3">
                         <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">{step.n}</span>
@@ -459,7 +456,9 @@ export function ProjectSettings() {
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg flex items-start gap-2 border border-blue-100 dark:border-blue-800/50">
                     <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                     <p className="text-[11px] text-blue-700 dark:text-blue-300">
-                      {isAr ? "تأكد من تفعيل صلاحيات Google Sheets و Google Drive للـ Service Account لضمان عمل المزامنة والإنشاء التلقائي." : "Ensure Google Sheets and Google Drive permissions are enabled for the Service Account to ensure sync and automatic creation work."}
+                      {isAr
+                        ? "الملف يبقى في حسابك أنت — التطبيق يقرأ ويكتب فقط، ولا يحتاج Google Drive API."
+                        : "The file stays in your own account — the app only reads and writes, and does not need the Google Drive API."}
                     </p>
                   </div>
                 </div>
@@ -476,18 +475,19 @@ export function ProjectSettings() {
                 <div className="space-y-1.5">
                   <Label className="text-xs">{isAr ? "بريد الـ Service Account (Client Email)" : "Service Account Email"}</Label>
                   <Input {...register("googleServiceAccountEmail")} placeholder="service-account@project.iam.gserviceaccount.com" className="font-mono text-xs" data-testid="input-googleEmail" />
-                  <p className="text-[10px] text-muted-foreground">{isAr ? "يجب أن يكون هذا البريد مضافاً كـ Editor في مجلد الـ Drive." : "This email must be added as Editor in the Drive folder."}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {isAr
+                      ? "يجب مشاركة ملف الـ Sheet مع هذا البريد كـ «محرر» في Google Drive."
+                      : "The Sheet file must be shared with this email as «Editor» in Google Drive."}
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">{isAr ? "معرف مجلد Drive (اختياري)" : "Drive Folder ID (Optional)"}</Label>
-                    <Input {...register("googleDriveFolderId")} placeholder="folder_id_from_url" className="font-mono text-xs" data-testid="input-folderId" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">{isAr ? "اسم ملف الـ Sheet (عند الإنشاء)" : "Sheet Filename (on creation)"}</Label>
-                    <Input {...register("googleSheetName")} placeholder={isAr ? "بيانات المشروع" : "Project Data"} data-testid="input-sheetName" />
-                  </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{isAr ? "اسم التبويب في الـ Sheet" : "Sheet Tab Name"}</Label>
+                  <Input {...register("googleSheetName")} placeholder={isAr ? "بيانات" : "Data"} data-testid="input-sheetName" />
+                  <p className="text-[10px] text-muted-foreground">
+                    {isAr ? "اسم التبويب (الورقة) داخل الملف. الافتراضي: بيانات." : "The tab (sheet) name inside the file. Default: بيانات."}
+                  </p>
                 </div>
 
                 {/* Service Account JSON Key */}
@@ -507,81 +507,60 @@ export function ProjectSettings() {
                     className="font-mono text-[11px] resize-y"
                     placeholder={project?.hasGoogleKey
                       ? (isAr ? "محفوظ — اتركه فارغاً للإبقاء على المفتاح الحالي" : "Saved — leave empty to keep current key")
-                      : (isAr ? 'الصق محتوى ملف JSON هنا...\n{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}' : 'Paste the JSON file content here...\n{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}')}
+                      : (isAr ? 'الصق محتوى ملف JSON هنا...\n{\n  "type": "service_account",\n  ...\n}' : 'Paste the JSON file content here...\n{\n  "type": "service_account",\n  ...\n}')}
                     data-testid="input-googleKey"
                   />
                   <p className="text-[10px] text-muted-foreground">
                     {isAr
-                      ? "محتوى ملف JSON الذي نزّلته من Google Cloud Console عند إنشاء الـ Service Account."
-                      : "The content of the JSON file you downloaded from Google Cloud Console when creating the Service Account."}
+                      ? "محتوى ملف JSON الذي نزّلته من Google Cloud Console. يُشفَّر قبل الحفظ ولا يُعرض مجدداً."
+                      : "Content of the JSON file downloaded from Google Cloud Console. Encrypted before saving, never shown again."}
                   </p>
                 </div>
 
-                {/* Current Sheet ID */}
+                {/* Sheet ID / URL */}
                 <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <Label className="text-xs flex items-center gap-2">
-                    {isAr ? "معرف ملف الـ Sheet الحالي" : "Current Sheet ID"}
-                    {project?.googleSheetId && <Badge variant="secondary" className="font-normal text-[10px]">{isAr ? "موجود" : "Present"}</Badge>}
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      {...register("googleSheetId")}
-                      placeholder="spreadsheet_id_from_url"
-                      className="font-mono text-xs flex-1"
-                      readOnly={!showManualSheetId && !!project?.googleSheetId}
-                      data-testid="input-sheetId"
-                    />
-                    {!showManualSheetId && project?.googleSheetId && (
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowManualSheetId(true)} title={isAr ? "تعديل يدوياً" : "Edit manually"}>
-                        <Wrench className="h-4 w-4" />
-                      </Button>
+                    {isAr ? "رابط ملف الـ Sheet أو معرّفه" : "Sheet File Link or ID"}
+                    {project?.googleSheetId && (
+                      <Badge variant="secondary" className="font-normal text-[10px]">{isAr ? "موجود" : "Present"}</Badge>
                     )}
-                  </div>
+                  </Label>
+                  <Input
+                    {...register("googleSheetId")}
+                    placeholder={isAr ? "https://docs.google.com/spreadsheets/d/... أو الـ ID فقط" : "https://docs.google.com/spreadsheets/d/... or bare ID"}
+                    className="font-mono text-xs"
+                    data-testid="input-sheetId"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {isAr
+                      ? "الصق الرابط الكامل أو الـ ID المجرد — يُستخرج الـ ID تلقائياً من الرابط."
+                      : "Paste the full URL or the bare ID — the ID is extracted automatically from the URL."}
+                  </p>
                   {project?.googleSheetId && (
-                    <a href={`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center text-[11px] text-blue-600 hover:underline gap-1">
-                      <ExternalLink className="h-3 w-3" /> {isAr ? "فتح ملف الـ Sheet الحالي" : "Open current Sheet file"}
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`}
+                      target="_blank" rel="noreferrer"
+                      className="inline-flex items-center text-[11px] text-blue-600 hover:underline gap-1"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      {isAr ? "فتح ملف الـ Sheet الحالي" : "Open current Sheet file"}
                     </a>
-                  )}
-                  {!project?.googleSheetId && (
-                    <p className="text-[10px] text-muted-foreground">
-                      {isAr
-                        ? "أدخل ID يدوياً أو استخدم زر «إنشاء ملف Sheet» لإنشائه تلقائياً."
-                        : "Enter an ID manually or use the «Create Sheet File» button to create one automatically."}
-                    </p>
                   )}
                 </div>
 
-                {project?.sheetCreationPending && (
-                  <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800/50 flex items-center gap-3 animate-pulse">
-                    <Loader2 className="h-5 w-5 text-yellow-600 animate-spin shrink-0" />
-                    <div>
-                      <p className="text-xs font-bold text-yellow-800 dark:text-yellow-300">{isAr ? "جاري إنشاء الـ Sheet..." : "Creating Sheet..."}</p>
-                      <p className="text-[10px] text-yellow-700 dark:text-yellow-400">{isAr ? "يرجى الانتظار، سيتم تحديث الصفحة تلقائياً عند الانتهاء." : "Please wait, page will auto-refresh when done."}</p>
-                    </div>
-                  </div>
-                )}
-
                 {testResult && <ResultBox msg={testResult} />}
-                {createdSheetUrl && (
-                  <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 text-blue-800 dark:text-blue-300 flex items-center justify-between">
-                    <span className="text-xs font-bold">{isAr ? "✅ تم إنشاء الملف بنجاح!" : "✅ File created successfully!"}</span>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => window.open(createdSheetUrl, "_blank")}>
-                      <ExternalLink className="h-3 w-3 ml-1" />{isAr ? "فتح الملف" : "Open File"}
-                    </Button>
-                  </div>
-                )}
 
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <Button type="submit" disabled={saveMut.isPending} data-testid="button-save-sheets">
                     {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Save className="h-4 w-4 ml-1" />}
                     {isAr ? "حفظ الإعدادات" : "Save Settings"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={createSheet} disabled={testing || project?.sheetCreationPending} data-testid="button-create-sheet">
-                    {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
-                    {project?.googleSheetId ? (isAr ? "إنشاء ملف جديد" : "Create New File") : (isAr ? "إنشاء ملف Sheet" : "Create Sheet File")}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={testSheets} disabled={testing || !project?.googleSheetId} data-testid="button-test-sheets">
+                  <Button
+                    type="button" variant="outline"
+                    onClick={testSheets}
+                    disabled={testing || !project?.googleSheetId}
+                    data-testid="button-test-sheets"
+                  >
                     {testing ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <RefreshCw className="h-4 w-4 ml-1" />}
                     {isAr ? "اختبار الاتصال" : "Test Connection"}
                   </Button>
@@ -596,7 +575,7 @@ export function ProjectSettings() {
                 <h3 className="text-sm font-bold">{isAr ? "أدوات الصيانة والمزامنة" : "Maintenance & Sync Tools"}</h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg space-y-2">
                   <p className="text-xs font-bold">{isAr ? "التحقق من الأعمدة" : "Check Columns"}</p>
                   <p className="text-[10px] text-muted-foreground">{isAr ? "فحص ما إذا كانت ترويسات الـ Sheet تطابق حقول المشروع." : "Verify if Sheet headers match project fields."}</p>
@@ -624,15 +603,6 @@ export function ProjectSettings() {
                   <Button size="sm" variant="secondary" className="w-full h-8 text-[11px]" onClick={doImport} disabled={!!sheetsLoading}>
                     {sheetsLoading === "import" ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Upload className="h-3 w-3 ml-1" />}
                     {isAr ? "مزامنة الآن" : "Sync Now"}
-                  </Button>
-                </div>
-
-                <div className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg space-y-2">
-                  <p className="text-xs font-bold text-red-500">{isAr ? "تنظيف Drive (خطير)" : "Drive Cleanup (Dangerous)"}</p>
-                  <p className="text-[10px] text-muted-foreground">{isAr ? "حذف كافة الملفات غير المرتبطة بأي مشروع في الـ Service Account." : "Delete all files not linked to any project in the Service Account."}</p>
-                  <Button size="sm" variant="ghost" className="w-full h-8 text-[11px] text-red-400 hover:text-red-500" onClick={cleanupDrive} disabled={!!sheetsLoading}>
-                    {sheetsLoading === "cleanup" ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Trash2 className="h-3 w-3 ml-1" />}
-                    {isAr ? "تنظيف الـ Drive" : "Cleanup Drive"}
                   </Button>
                 </div>
               </div>
