@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db.js";
 import { projects, projectFields, projectRecords, projectAuditLog } from "../../shared/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { appendRecordToSheet, updateRecordRow } from "../services/projectSheets.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
 import { decrypt } from "../services/crypto.js";
@@ -93,8 +93,13 @@ router.post("/:projectId/submit", submitLimiter, async (req: Request, res: Respo
     const tokenHours = proj.editTokenHours ?? 48;
     const tokenExpiresAt = new Date(Date.now() + tokenHours * 60 * 60 * 1000);
 
+    // Collect autoincrement field keys so insertRecordAtomic can fill them inside the lock
+    const autoFields = await db.select({ key: projectFields.key }).from(projectFields)
+      .where(and(eq(projectFields.projectId, pid), sql`${projectFields.fieldType} = 'autoincrement'`));
+    const autoIncrementKeys = autoFields.map(f => f.key);
+
     // Atomically assign sequential number and insert (advisory lock prevents duplicates)
-    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt);
+    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt, autoIncrementKeys);
     const seqNum = record.sequential_number;
 
     await db.insert(projectAuditLog).values({

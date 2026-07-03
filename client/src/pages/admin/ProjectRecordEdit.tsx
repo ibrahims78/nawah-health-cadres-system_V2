@@ -26,6 +26,16 @@ function FieldInput({ f, register, errors, watch }: {
   const opts = (f.options as string[] | null) || [];
   const val = watch(f.key);
 
+  if (f.fieldType === "autoincrement") {
+    const currentVal = watch(f.key);
+    return (
+      <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-600 dark:text-slate-400 select-none">
+        <span className="font-mono font-bold text-primary">{currentVal || "—"}</span>
+        <span className="text-xs text-muted-foreground">({isAr ? "ترقيم تلقائي — للقراءة فقط" : "Auto number — read only"})</span>
+      </div>
+    );
+  }
+
   if (f.fieldType === "textarea") {
     return (
       <Textarea

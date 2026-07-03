@@ -25,6 +25,15 @@ function FieldInput({ f, register, errors, watch }: {
   const opts = (f.options as string[] | null) || [];
   const val = watch(f.key);
 
+  if (f.fieldType === "autoincrement") {
+    return (
+      <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 text-sm text-muted-foreground select-none">
+        <span className="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">123</span>
+        {isAr ? "يُملأ تلقائياً عند الحفظ" : "Auto-filled on save"}
+      </div>
+    );
+  }
+
   if (f.fieldType === "textarea") {
     return (
       <Textarea

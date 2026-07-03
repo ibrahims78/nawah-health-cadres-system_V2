@@ -93,7 +93,7 @@ export function ProjectEditForm() {
                 {Array.isArray(project?.steps) ? (project.steps[Number(step) - 1] || (isAr ? `الخطوة ${step}` : `Step ${step}`)) : (isAr ? `الخطوة ${step}` : `Step ${step}`)}
               </h3>
               <div className="space-y-4">
-                {stepFields.map(f => (
+                {stepFields.filter(f => f.fieldType !== "autoincrement").map(f => (
                   <div key={f.id} className="space-y-1.5">
                     <Label className="text-sm font-medium">
                       {f.label}{f.isRequired && <span className="text-red-500 mr-1">*</span>}

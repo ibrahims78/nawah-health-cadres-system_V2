@@ -338,7 +338,10 @@ export function ProjectRegister() {
     navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  const renderField = (f: ProjectField) => (
+  const renderField = (f: ProjectField) => {
+    // autoincrement fields are filled server-side — never shown to the public
+    if (f.fieldType === "autoincrement") return null;
+    return (
     <div key={f.id} className={cn("space-y-1.5", f.fieldType === "textarea" ? "col-span-2" : "")}>
       <Label className="text-sm font-medium text-slate-700 dark:text-slate-200">
         {f.label}
@@ -390,6 +393,7 @@ export function ProjectRegister() {
       )}
     </div>
   );
+  };
 
   /* ─── Loading ─── */
   if (isLoading) return (

@@ -314,13 +314,18 @@ router.get("/:id/records", requireAuth, async (req: Request, res: Response) => {
 
 router.post("/:id/records", requireEditorOrAdmin, async (req: Request, res: Response) => {
   try {
-    const [proj] = await db.select({ editTokenHours: projects.editTokenHours }).from(projects).where(eq(projects.id, String(req.params.id)));
+    const pid = String(req.params.id);
+    const [proj] = await db.select({ editTokenHours: projects.editTokenHours }).from(projects).where(eq(projects.id, pid));
     const tokenHours = proj?.editTokenHours ?? 48;
     const tokenExpiresAt = new Date(Date.now() + tokenHours * 60 * 60 * 1000);
 
+    // Collect autoincrement field keys so insertRecordAtomic can fill them inside the lock
+    const autoFields = await db.select({ key: projectFields.key }).from(projectFields)
+      .where(and(eq(projectFields.projectId, pid), sql`${projectFields.fieldType} = 'autoincrement'`));
+    const autoIncrementKeys = autoFields.map(f => f.key);
+
     // Atomically assign sequential number and insert (advisory lock prevents duplicates)
-    const pid = String(req.params.id);
-    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt);
+    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt, autoIncrementKeys);
     const seqNum = record.sequential_number;
 
     await db.insert(projectAuditLog).values({

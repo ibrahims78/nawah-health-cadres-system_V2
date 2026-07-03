@@ -28,12 +28,14 @@ const FIELD_TYPES_AR = [
   { value: "date", label: "تاريخ" }, { value: "select", label: "قائمة منسدلة" },
   { value: "radio", label: "اختيار واحد" }, { value: "textarea", label: "نص طويل" },
   { value: "phone", label: "هاتف" }, { value: "email", label: "بريد إلكتروني" },
+  { value: "autoincrement", label: "ترقيم تلقائي" },
 ];
 const FIELD_TYPES_EN = [
   { value: "text", label: "Text" }, { value: "number", label: "Number" },
   { value: "date", label: "Date" }, { value: "select", label: "Dropdown" },
   { value: "radio", label: "Single Choice" }, { value: "textarea", label: "Long Text" },
   { value: "phone", label: "Phone" }, { value: "email", label: "Email" },
+  { value: "autoincrement", label: "Auto Number" },
 ];
 
 const WIZARD_STEPS_AR = ["رفع الملف", "تحرير الحقول", "إعدادات المشروع", "إنشاء"];

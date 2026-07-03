@@ -341,6 +341,7 @@ export function ProjectSettings() {
                         <option value="textarea">{isAr ? "نص طويل" : "Textarea"}</option>
                         <option value="phone">{isAr ? "هاتف" : "Phone"}</option>
                         <option value="email">{isAr ? "بريد" : "Email"}</option>
+                        <option value="autoincrement">{isAr ? "ترقيم تلقائي" : "Auto Number"}</option>
                       </select>
                       <select value={f.stepNumber || 1} onChange={e => updateField(idx, { stepNumber: Number(e.target.value) })}
                         className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-8 w-20" data-testid={`field-step-${idx}`}>
