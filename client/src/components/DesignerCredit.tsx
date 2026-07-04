@@ -35,7 +35,7 @@ export function DesignerCredit() {
           </span>
           <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-700/40">
             <CameraIcon />
-            {ar ? "تصوير" : "Photography"}
+            {ar ? "تطوير" : "Development"}
           </span>
         </div>
 
