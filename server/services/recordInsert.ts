@@ -33,15 +33,11 @@ export async function insertRecordAtomic(
     );
     const seqNum: number = Number(seqRows[0].seq);
 
-    // Auto-fill autoincrement fields inside the lock to prevent race conditions.
-    // Uses parameterized ->>$2 to safely pass the field key without SQL injection.
+    // Auto-fill autoincrement fields with the same value as sequentialNumber.
+    // This ensures a single source of truth — no separate counter per field.
     const enrichedData: Record<string, any> = { ...(data as Record<string, any>) };
     for (const key of autoIncrementKeys) {
-      const { rows: autoRows } = await client.query(
-        "SELECT COALESCE(MAX((data->>$2)::numeric), 0) + 1 AS next_val FROM project_records WHERE project_id = $1",
-        [projectId, key]
-      );
-      enrichedData[key] = String(Number(autoRows[0]?.next_val ?? 1));
+      enrichedData[key] = String(seqNum);
     }
 
     const { rows } = await client.query<Omit<InsertedRecord, "enriched_data">>(

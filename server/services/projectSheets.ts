@@ -432,6 +432,9 @@ export async function importFromProjectSheet(
     const labelToKey: Record<string, string> = {};
     for (const f of fields) labelToKey[f.label] = f.key;
 
+    // Keys of autoincrement fields — their values are always derived from seqNum, never from Sheet
+    const autoIncrementKeys = new Set(fields.filter(f => f.fieldType === "autoincrement").map(f => f.key));
+
     const colMap: Record<number, string> = {};
     for (let i = 1; i < headerRow.length; i++) {
       const key = labelToKey[headerRow[i]];
@@ -448,12 +451,19 @@ export async function importFromProjectSheet(
       const seqNum = row[0] ? parseInt(String(row[0])) : null;
       const data: Record<string, string> = {};
       for (const [colIdx, key] of Object.entries(colMap)) {
+        // autoincrement fields are locked to seqNum — ignore whatever the Sheet says
+        if (autoIncrementKeys.has(key)) continue;
         data[key] = String(row[parseInt(colIdx)] ?? "");
       }
-      if (Object.keys(data).length === 0) { skipped++; continue; }
+      if (Object.keys(data).length === 0 && autoIncrementKeys.size === 0) { skipped++; continue; }
 
       if (seqNum && !isNaN(seqNum)) {
         sheetSeqNums.push(seqNum);
+
+        // Stamp all autoincrement fields with seqNum (single source of truth)
+        for (const key of autoIncrementKeys) {
+          data[key] = String(seqNum);
+        }
 
         const existing = await db.select({ id: prTable.id })
           .from(prTable)
