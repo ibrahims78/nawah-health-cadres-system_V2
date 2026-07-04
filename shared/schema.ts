@@ -223,3 +223,12 @@ export const globalSettingsSchema = z.object({
   smtpPass: z.string().optional(),
   smtpFromName: z.string().optional(),
 });
+
+export const verifyCodeSchema = z.object({
+  code: z.string().min(1, "رمز الدعوة مطلوب").max(200, "الرمز طويل جداً"),
+});
+
+export const submitFormSchema = z.object({}).catchall(
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.undefined()])
+    .transform(v => (v === undefined ? null : v))
+);

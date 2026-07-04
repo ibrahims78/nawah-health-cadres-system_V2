@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useLang } from "@/context/LanguageContext";
 import {
   Save, Loader2, Users, Mail, Globe, Plus, Trash2,
-  Eye, EyeOff, Send, Check, X, RefreshCw, KeyRound,
+  Eye, EyeOff, Send, RefreshCw, KeyRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { User } from "@shared/schema";
@@ -31,7 +31,6 @@ export function GlobalSettings() {
   const { toast } = useToast();
   const [tab, setTab] = useState<"general" | "smtp" | "users">("general");
   const [showPass, setShowPass] = useState(false);
-  const [inviteResult, setInviteResult] = useState<string | null>(null);
   const [smtpTesting, setSmtpTesting] = useState(false);
 
   // Reset password dialog
@@ -98,12 +97,23 @@ export function GlobalSettings() {
   const inviteMut = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/projects/send-invitation", data),
     onSuccess: (res: any) => {
-      setInviteResult(res.emailSent
-        ? (ar ? "✅ تم إرسال الدعوة بالبريد الإلكتروني" : "✅ Invitation sent via email")
-        : (ar ? `🔗 رابط الدعوة: ${res.inviteUrl || ""}` : `🔗 Invitation link: ${res.inviteUrl || ""}`));
+      if (res.emailSent) {
+        toast({ description: ar ? "✅ تم إرسال الدعوة بالبريد الإلكتروني" : "✅ Invitation sent via email" });
+      } else {
+        const link = res.inviteUrl || "";
+        toast({
+          description: (
+            <span className="break-all">
+              {ar ? "🔗 رابط الدعوة: " : "🔗 Invitation link: "}
+              <a href={link} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 dark:text-blue-400">{link}</a>
+            </span>
+          ) as any,
+          duration: 15000,
+        });
+      }
       resetInvite({ email: "", role: "viewer" });
     },
-    onError: (err: any) => setInviteResult(`❌ ${err.message}`),
+    onError: (err: any) => toast({ variant: "destructive", description: `❌ ${err.message}` }),
   });
 
   const createUserMut = useMutation({
@@ -171,17 +181,6 @@ export function GlobalSettings() {
     { key: "smtp", label: ar ? "البريد" : "Email", icon: Mail },
     { key: "users", label: ar ? "المستخدمون" : "Users", icon: Users },
   ] as const;
-
-  const ResultBox = ({ msg }: { msg: string }) => (
-    <div className={`text-sm p-2.5 rounded-lg border flex items-start gap-2 ${
-      msg.startsWith("✅") || msg.startsWith("🔗")
-        ? "bg-green-50 dark:bg-green-900/20 border-green-200 text-green-700 dark:text-green-400"
-        : "bg-red-50 dark:bg-red-900/20 border-red-200 text-red-700 dark:text-red-400"
-    }`}>
-      {msg.startsWith("✅") ? <Check className="h-4 w-4 shrink-0 mt-0.5" /> : <X className="h-4 w-4 shrink-0 mt-0.5" />}
-      <span className="break-all">{msg}</span>
-    </div>
-  );
 
   return (
     <Layout>
@@ -567,7 +566,6 @@ export function GlobalSettings() {
                       : <Send className="h-4 w-4" />}
                   </Button>
                 </div>
-                {inviteResult && <ResultBox msg={inviteResult} />}
               </form>
             </Card>
           </div>

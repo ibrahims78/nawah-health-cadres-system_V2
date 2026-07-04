@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db.js";
-import { projects, projectFields, projectRecords, projectAuditLog } from "../../shared/schema.js";
+import { projects, projectFields, projectRecords, projectAuditLog, verifyCodeSchema, submitFormSchema } from "../../shared/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { appendRecordToSheet, updateRecordRow } from "../services/projectSheets.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
@@ -63,7 +63,9 @@ router.get("/:projectId/info", async (req: Request, res: Response) => {
 router.post("/:projectId/verify-code", verifyLimiter, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.projectId);
-    const { code } = req.body;
+    const parsed = verifyCodeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+    const { code } = parsed.data;
     const [proj] = await db.select({
       invitationCode: projects.invitationCode,
       formEnabled: projects.formEnabled,
@@ -87,6 +89,8 @@ router.post("/:projectId/verify-code", verifyLimiter, async (req: Request, res: 
 router.post("/:projectId/submit", submitLimiter, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.projectId);
+    const parsed = submitFormSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
     const [projCheck] = await db.select({
       invitationCode: projects.invitationCode,
       formEnabled: projects.formEnabled,
@@ -183,6 +187,8 @@ router.patch("/:projectId/edit/:token", async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.projectId);
     const token = String(req.params.token);
+    const parsed = submitFormSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
     const [existing] = await db.select().from(projectRecords)
       .where(and(eq(projectRecords.projectId, pid), eq(projectRecords.editToken, token as any)));
     if (!existing) return res.status(404).json({ error: "الرابط غير صالح" });

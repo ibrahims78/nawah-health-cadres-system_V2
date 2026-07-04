@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -491,7 +492,32 @@ export function ProjectRecords() {
         {/* ─── Table ─── */}
         <Card className="overflow-hidden">
           {isLoading ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <th className="px-3 py-2.5 w-8"><Skeleton className="h-4 w-4 rounded" /></th>
+                    <th className="px-3 py-2.5"><Skeleton className="h-3 w-6" /></th>
+                    {[1,2,3,4,5].map(i => (
+                      <th key={i} className="px-3 py-2.5"><Skeleton className="h-3 w-20" /></th>
+                    ))}
+                    <th className="px-3 py-2.5"><Skeleton className="h-3 w-16" /></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i} className="border-b border-slate-100 dark:border-slate-800">
+                      <td className="px-3 py-3"><Skeleton className="h-4 w-4 rounded" /></td>
+                      <td className="px-3 py-3"><Skeleton className="h-3 w-8" /></td>
+                      {[1,2,3,4,5].map(j => (
+                        <td key={j} className="px-3 py-3"><Skeleton className={`h-3 ${j % 2 === 0 ? "w-24" : "w-32"}`} /></td>
+                      ))}
+                      <td className="px-3 py-3"><Skeleton className="h-6 w-16 rounded-full" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : !data?.data?.length ? (
             <div className="text-center py-16 text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
