@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, fetchJson } from "@/lib/queryClient";
 import {
   Save, Loader2, Plus, Trash2, GripVertical, ArrowRight, ExternalLink,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Eye, EyeOff, GitBranch, Settings2, FileUp,
   Upload, TableProperties, Wrench, RefreshCw, BotMessageSquare, ArrowUpToLine,
   History, User, Clock, FolderSync, HardDrive, AlertTriangle, CheckCircle2, XCircle,
 } from "lucide-react";
@@ -357,80 +357,179 @@ export function ProjectSettings() {
               {fields.length === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-6">{isAr ? "لا يوجد حقول. أضف حقلاً للبدء." : "No fields found. Add a field to get started."}</p>
               ) : (
-                fields.map((f, idx) => (
+                fields.map((f, idx) => {
+                  const condCount = ((f as any).conditions || []).filter((c: any) => c.field).length;
+                  const isFieldVisible = f.isVisible !== false;
+                  const isExpanded = expandedFieldIdx === idx;
+
+                  // field type label map
+                  const typeLabels: Record<string, string> = isAr
+                    ? { text: "📝 نص", number: "🔢 رقم", date: "📅 تاريخ", select: "📋 قائمة", radio: "🔘 راديو", textarea: "📄 نص طويل", phone: "📞 هاتف", email: "✉️ بريد", file: "📎 رفع ملف", autoincrement: "🔁 ترقيم تلقائي" }
+                    : { text: "📝 Text", number: "🔢 Number", date: "📅 Date", select: "📋 Select", radio: "🔘 Radio", textarea: "📄 Textarea", phone: "📞 Phone", email: "✉️ Email", file: "📎 File Upload", autoincrement: "🔁 Auto Number" };
+
+                  return (
                   <div
                     key={f.id}
-                    className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-3 bg-slate-50/50 dark:bg-slate-800/30 cursor-grab active:cursor-grabbing"
-                    draggable
-                    onDragStart={() => handleDragStart(idx)}
-                    onDragEnter={() => handleDragEnter(idx)}
-                    onDragEnd={handleDragEnd}
-                    onDragOver={e => e.preventDefault()}
+                    className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+                      isFieldVisible
+                        ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50"
+                        : "border-dashed border-slate-300 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/20 opacity-60"
+                    }`}
                     data-testid={`field-${idx}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span title={isAr ? "اسحب لإعادة الترتيب" : "Drag to reorder"}>
-                        <GripVertical className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                    {/* ── TOP: Drag + Inputs + Type + Step ── */}
+                    <div
+                      className="flex items-center gap-2 p-3 cursor-grab active:cursor-grabbing"
+                      draggable
+                      onDragStart={() => handleDragStart(idx)}
+                      onDragEnter={() => handleDragEnter(idx)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={e => e.preventDefault()}
+                    >
+                      <span title={isAr ? "اسحب لإعادة الترتيب" : "Drag to reorder"} className="flex-shrink-0">
+                        <GripVertical className="h-4 w-4 text-slate-300 dark:text-slate-600" />
                       </span>
-                      <div className="grid grid-cols-2 gap-2 flex-1">
-                        <Input value={f.label} onChange={e => updateField(idx, { label: e.target.value })} placeholder={isAr ? "الاسم المعروض" : "Display Label"} className="text-sm h-8" data-testid={`field-label-${idx}`} />
-                        <Input value={f.key} onChange={e => updateField(idx, { key: e.target.value })} placeholder={isAr ? "المفتاح (key)" : "Key (internal)"} className="text-sm h-8 font-mono" data-testid={`field-key-${idx}`} />
+
+                      {/* Label + Key */}
+                      <div className="grid grid-cols-2 gap-2 flex-1 min-w-0">
+                        <Input
+                          value={f.label}
+                          onChange={e => updateField(idx, { label: e.target.value })}
+                          placeholder={isAr ? "الاسم المعروض للمستخدم" : "Display label"}
+                          className="text-sm h-8"
+                          data-testid={`field-label-${idx}`}
+                        />
+                        <Input
+                          value={f.key}
+                          onChange={e => updateField(idx, { key: e.target.value })}
+                          placeholder={isAr ? "المفتاح الداخلي (key)" : "Internal key"}
+                          className="text-sm h-8 font-mono text-slate-500"
+                          data-testid={`field-key-${idx}`}
+                        />
                       </div>
-                      <select value={f.fieldType || "text"} onChange={e => updateField(idx, { fieldType: e.target.value })}
-                        className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-8" data-testid={`field-type-${idx}`}>
-                        <option value="text">{isAr ? "نص" : "Text"}</option>
-                        <option value="number">{isAr ? "رقم" : "Number"}</option>
-                        <option value="date">{isAr ? "تاريخ" : "Date"}</option>
-                        <option value="select">{isAr ? "قائمة" : "Select"}</option>
-                        <option value="radio">{isAr ? "راديو" : "Radio"}</option>
-                        <option value="textarea">{isAr ? "نص طويل" : "Textarea"}</option>
-                        <option value="phone">{isAr ? "هاتف" : "Phone"}</option>
-                        <option value="email">{isAr ? "بريد" : "Email"}</option>
-                        <option value="file">{isAr ? "ملف" : "File"}</option>
-                        <option value="autoincrement">{isAr ? "ترقيم تلقائي" : "Auto Number"}</option>
-                      </select>
-                      <select value={f.stepNumber || 1} onChange={e => updateField(idx, { stepNumber: Number(e.target.value) })}
-                        className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-8 w-20" data-testid={`field-step-${idx}`}>
-                        {[1, 2, 3, 4, 5].map(s => <option key={s} value={s}>{isAr ? `خطوة ${s}` : `Step ${s}`}</option>)}
-                      </select>
-                      <div className="flex items-center gap-1">
-                        <input type="checkbox" checked={!!f.isRequired} onChange={e => updateField(idx, { isRequired: e.target.checked })} id={`req-${idx}`} className="rounded" data-testid={`field-required-${idx}`} />
-                        <label htmlFor={`req-${idx}`} className="text-xs">{isAr ? "إلزامي" : "Required"}</label>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <input type="checkbox" checked={f.isVisible !== false} onChange={e => updateField(idx, { isVisible: e.target.checked })} id={`vis-${idx}`} className="rounded" />
-                        <label htmlFor={`vis-${idx}`} className="text-xs">{isAr ? "مرئي" : "Visible"}</label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedFieldIdx(expandedFieldIdx === idx ? null : idx)}
-                        className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
-                        title={isAr ? "خيارات التحقق" : "Validation options"}
-                        data-testid={`field-expand-${idx}`}
+
+                      {/* Type selector */}
+                      <select
+                        value={f.fieldType || "text"}
+                        onChange={e => updateField(idx, { fieldType: e.target.value })}
+                        className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-8 min-w-[130px]"
+                        data-testid={`field-type-${idx}`}
                       >
-                        {expandedFieldIdx === idx ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      </button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600" onClick={() => removeField(idx)} data-testid={`button-remove-field-${idx}`}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                        {Object.entries(typeLabels).map(([v, label]) => (
+                          <option key={v} value={v}>{label}</option>
+                        ))}
+                      </select>
+
+                      {/* Step */}
+                      <select
+                        value={f.stepNumber || 1}
+                        onChange={e => updateField(idx, { stepNumber: Number(e.target.value) })}
+                        className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-8 w-24"
+                        data-testid={`field-step-${idx}`}
+                      >
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <option key={s} value={s}>{isAr ? `الخطوة ${s}` : `Step ${s}`}</option>
+                        ))}
+                      </select>
                     </div>
 
-                    {/* File field restrictions */}
+                    {/* ── CONTROLS BAR ── */}
+                    <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
+
+                      {/* Required toggle */}
+                      <button
+                        type="button"
+                        onClick={() => updateField(idx, { isRequired: !f.isRequired })}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                          f.isRequired
+                            ? "bg-rose-50 border-rose-300 text-rose-600 dark:bg-rose-900/30 dark:border-rose-700 dark:text-rose-400"
+                            : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
+                        }`}
+                        data-testid={`field-required-${idx}`}
+                        title={isAr ? "إلزامي — المستخدم مُلزم بملء هذا الحقل" : "Required — user must fill this field"}
+                      >
+                        <span>{f.isRequired ? "✱" : "○"}</span>
+                        {isAr ? "إلزامي" : "Required"}
+                      </button>
+
+                      {/* Visible toggle */}
+                      <button
+                        type="button"
+                        onClick={() => updateField(idx, { isVisible: !isFieldVisible })}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                          isFieldVisible
+                            ? "bg-sky-50 border-sky-300 text-sky-600 dark:bg-sky-900/30 dark:border-sky-700 dark:text-sky-400"
+                            : "bg-slate-100 border-slate-300 text-slate-400 dark:bg-slate-800 dark:border-slate-600 line-through"
+                        }`}
+                        title={isAr
+                          ? (isFieldVisible ? "الحقل ظاهر في نموذج التعبئة — اضغط لإخفائه" : "الحقل مخفي من نموذج التعبئة — اضغط لإظهاره")
+                          : (isFieldVisible ? "Visible in form — click to hide" : "Hidden from form — click to show")}
+                      >
+                        {isFieldVisible
+                          ? <Eye className="h-3 w-3" />
+                          : <EyeOff className="h-3 w-3" />}
+                        {isAr ? (isFieldVisible ? "ظاهر في النموذج" : "مخفي من النموذج") : (isFieldVisible ? "Visible" : "Hidden")}
+                      </button>
+
+                      {/* Advanced panel toggle — conditions + validation in one panel */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedFieldIdx(isExpanded ? null : idx)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                          isExpanded
+                            ? "bg-primary/10 border-primary/40 text-primary dark:bg-primary/20"
+                            : condCount > 0
+                              ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-400"
+                              : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 hover:border-primary/40 hover:text-primary"
+                        }`}
+                        data-testid={`field-expand-${idx}`}
+                        title={isAr ? "شروط الظهور + التحقق + الخيارات المتقدمة" : "Conditions + Validation + Advanced options"}
+                      >
+                        <GitBranch className="h-3 w-3" />
+                        {isAr ? "شروط وتحقق" : "Conditions & Validation"}
+                        {condCount > 0 && (
+                          <span className="bg-amber-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">{condCount}</span>
+                        )}
+                        {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+
+                      {/* Spacer */}
+                      <div className="flex-1" />
+
+                      {/* DELETE — always visible and clearly red */}
+                      <button
+                        type="button"
+                        onClick={() => removeField(idx)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border border-red-200 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white hover:border-red-500 transition-all dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-600 dark:hover:border-red-600 dark:hover:text-white"
+                        data-testid={`button-remove-field-${idx}`}
+                        title={isAr ? "حذف هذا الحقل نهائياً" : "Delete this field permanently"}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        {isAr ? "حذف الحقل" : "Delete"}
+                      </button>
+                    </div>
+
+                    {/* ── FILE FIELD OPTIONS ── */}
                     {f.fieldType === "file" && (
-                      <div className="pr-6 space-y-3">
+                      <div className="mx-3 mb-3 p-3 rounded-lg bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 space-y-3">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+                          <FileUp className="h-3.5 w-3.5" />
+                          {isAr ? "إعدادات رفع الملف" : "File Upload Settings"}
+                        </div>
                         <div>
-                          <p className="text-[11px] text-muted-foreground mb-1">
-                            {isAr ? "أنواع الملفات المسموحة (اتركه فارغاً للسماح بالكل)" : "Allowed file types (leave empty to allow all)"}
+                          <p className="text-[11px] text-muted-foreground mb-2">
+                            {isAr ? "أنواع الملفات المسموحة — اتركه فارغاً للسماح بأي ملف" : "Allowed file types — leave empty to allow all"}
                           </p>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             {["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx", "txt"].map(ext => {
                               const current: string[] = (f as any).allowedFileTypes || [];
                               const isChecked = current.includes(ext);
                               return (
-                                <label key={ext} className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs cursor-pointer select-none transition-colors
-                                  ${isChecked
-                                    ? "bg-primary/10 border-primary text-primary font-medium"
-                                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400"}`}>
+                                <label key={ext} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] cursor-pointer select-none font-medium transition-all ${
+                                  isChecked
+                                    ? "bg-blue-500 border-blue-500 text-white"
+                                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
+                                }`}>
                                   <input
                                     type="checkbox"
                                     className="hidden"
@@ -447,27 +546,27 @@ export function ProjectSettings() {
                             })}
                           </div>
                         </div>
-                        <div>
-                          <p className="text-[11px] text-muted-foreground mb-1">
-                            {isAr ? "الحجم الأقصى (MB) — اتركه فارغاً لاستخدام الحد الافتراضي (10 MB)" : "Max size (MB) — leave empty to use default (10 MB)"}
-                          </p>
+                        <div className="flex items-center gap-3">
+                          <label className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            {isAr ? "الحجم الأقصى (MB)" : "Max size (MB)"}
+                          </label>
                           <input
                             type="number"
                             min={1}
                             max={50}
                             value={(f as any).maxFileSizeMb || ""}
                             onChange={e => updateField(idx, { maxFileSizeMb: e.target.value ? Number(e.target.value) : null } as any)}
-                            placeholder={isAr ? "مثال: 5" : "e.g. 5"}
-                            className="w-28 h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-sm"
+                            placeholder={isAr ? "افتراضي: 10" : "Default: 10"}
+                            className="w-32 h-7 rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 text-xs"
                           />
                         </div>
                       </div>
                     )}
 
-                    {/* Options editor */}
+                    {/* ── SELECT / RADIO OPTIONS ── */}
                     {(f.fieldType === "select" || f.fieldType === "radio") && (
-                      <div className="pr-6 space-y-1">
-                        <p className="text-[11px] text-muted-foreground">{isAr ? "الخيارات — كل خيار في سطر منفصل" : "Options — each option on a separate line"}</p>
+                      <div className="mx-3 mb-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+                        <p className="text-[11px] font-semibold text-slate-500">{isAr ? "الخيارات — كل خيار في سطر منفصل" : "Options — one per line"}</p>
                         <Textarea
                           key={`${f.id}-opts`}
                           defaultValue={(f.options as string[] | null || []).join("\n")}
@@ -487,95 +586,41 @@ export function ProjectSettings() {
                       </div>
                     )}
 
-                    {/* Validation + Condition section */}
-                    {expandedFieldIdx === idx && (
-                      <div className="pr-6 pt-2 border-t border-slate-200 dark:border-slate-700 space-y-4">
-
-                        {/* ── Validation ── */}
-                        <div className="space-y-3">
-                          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                            {isAr ? "قواعد التحقق (اختياري)" : "Validation Rules (optional)"}
-                          </p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأدنى للأحرف" : "Min length"}</label>
-                              <Input
-                                type="number"
-                                min={0}
-                                value={(f as any).validationMin ?? ""}
-                                onChange={e => updateField(idx, { validationMin: e.target.value ? Number(e.target.value) : null } as any)}
-                                className="h-7 text-xs"
-                                placeholder="0"
-                                data-testid={`field-valmin-${idx}`}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأقصى للأحرف" : "Max length"}</label>
-                              <Input
-                                type="number"
-                                min={0}
-                                value={(f as any).validationMax ?? ""}
-                                onChange={e => updateField(idx, { validationMax: e.target.value ? Number(e.target.value) : null } as any)}
-                                className="h-7 text-xs"
-                                placeholder="—"
-                                data-testid={`field-valmax-${idx}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[11px] text-muted-foreground">{isAr ? "نمط Regex (للتحقق)" : "Regex pattern"}</label>
-                            <Input
-                              value={(f as any).validationRegex ?? ""}
-                              onChange={e => updateField(idx, { validationRegex: e.target.value || null } as any)}
-                              className="h-7 text-xs font-mono"
-                              placeholder="^[0-9]{10}$"
-                              dir="ltr"
-                              data-testid={`field-valregex-${idx}`}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[11px] text-muted-foreground">{isAr ? "رسالة خطأ التحقق" : "Validation error message"}</label>
-                            <Input
-                              value={(f as any).validationMessage ?? ""}
-                              onChange={e => updateField(idx, { validationMessage: e.target.value || null } as any)}
-                              className="h-7 text-xs"
-                              placeholder={isAr ? "الرجاء إدخال رقم صحيح" : "Please enter a valid value"}
-                              data-testid={`field-valmsg-${idx}`}
-                            />
-                          </div>
-                        </div>
+                    {/* ── EXPANDED: CONDITIONS + VALIDATION + ACCESS ── */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-200 dark:border-slate-700 p-3 space-y-5 bg-slate-50/50 dark:bg-slate-800/20">
 
                         {/* ── Conditional Visibility ── */}
-                        <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                        <div className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                              {isAr ? "ظهور مشروط (اختياري)" : "Conditional Visibility (optional)"}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <GitBranch className="h-3.5 w-3.5 text-amber-500" />
+                              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                {isAr ? "ظهور مشروط" : "Conditional Visibility"}
+                              </p>
+                            </div>
                             {((f as any).conditions?.length || 0) > 1 && (
-                              <div className="flex items-center gap-1 text-[10px]">
-                                <label className="text-muted-foreground">{isAr ? "الشرط" : "Match"}</label>
-                                <select
-                                  value={(f as any).conditionOperator || "AND"}
-                                  onChange={e => updateField(idx, { conditionOperator: e.target.value } as any)}
-                                  className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5 text-[10px] h-6"
-                                  data-testid={`field-condop-${idx}`}
-                                >
-                                  <option value="AND">{isAr ? "كل الشروط (AND)" : "All (AND)"}</option>
-                                  <option value="OR">{isAr ? "أي شرط (OR)" : "Any (OR)"}</option>
-                                </select>
-                              </div>
+                              <select
+                                value={(f as any).conditionOperator || "AND"}
+                                onChange={e => updateField(idx, { conditionOperator: e.target.value } as any)}
+                                className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5 text-[10px] h-6"
+                                data-testid={`field-condop-${idx}`}
+                              >
+                                <option value="AND">{isAr ? "كل الشروط (AND)" : "All conditions (AND)"}</option>
+                                <option value="OR">{isAr ? "أي شرط (OR)" : "Any condition (OR)"}</option>
+                              </select>
                             )}
                           </div>
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-[10px] text-muted-foreground bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-md px-2 py-1.5">
                             {isAr
-                              ? "أظهر هذا الحقل فقط عند تحقق شرط واحد أو أكثر."
-                              : "Show this field only when one or more conditions are met."}
+                              ? "💡 يمكنك إخفاء هذا الحقل وإظهاره فقط عندما يختار المستخدم قيمة معينة في حقل آخر. مثال: أظهر حقل «اسم الشركة» فقط عندما يكون «نوع التسجيل» = «مؤسسة»."
+                              : "💡 Show this field only when a condition is met in another field. E.g. show 'Company Name' only when 'Type' = 'Business'."}
                           </p>
 
                           {((f as any).conditions || []).map((cond: any, ci: number) => (
-                            <div key={ci} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
+                            <div key={ci} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2">
                               <div className="space-y-1">
-                                <label className="text-[11px] text-muted-foreground">{isAr ? "الحقل" : "Field"}</label>
+                                <label className="text-[10px] text-muted-foreground font-medium">{isAr ? "إذا كان الحقل" : "If field"}</label>
                                 <select
                                   value={cond.field ?? ""}
                                   onChange={e => {
@@ -586,17 +631,17 @@ export function ProjectSettings() {
                                   className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-7"
                                   data-testid={`field-condfield-${idx}-${ci}`}
                                 >
-                                  <option value="">{isAr ? "اختر حقلاً" : "Select a field"}</option>
+                                  <option value="">{isAr ? "— اختر حقلاً —" : "— choose a field —"}</option>
                                   {fields
                                     .filter((other, oi) => oi !== idx && other.fieldType !== "autoincrement")
                                     .map(other => (
-                                      <option key={other.id} value={other.key}>{other.label}</option>
+                                      <option key={other.id} value={other.key}>{other.label || other.key}</option>
                                     ))}
                                 </select>
                               </div>
                               <div className="space-y-1">
-                                <label className="text-[11px] text-muted-foreground">{isAr ? "ليس" : "Not"}</label>
-                                <div className="h-7 flex items-center">
+                                <label className="text-[10px] text-muted-foreground font-medium">{isAr ? "عكس" : "Negate"}</label>
+                                <div className="h-7 flex items-center justify-center">
                                   <input
                                     type="checkbox"
                                     checked={!!cond.negate}
@@ -607,11 +652,12 @@ export function ProjectSettings() {
                                     }}
                                     className="rounded"
                                     data-testid={`field-condnegate-${idx}-${ci}`}
+                                    title={isAr ? "عكس الشرط (≠ بدلاً من =)" : "Negate condition (≠ instead of =)"}
                                   />
                                 </div>
                               </div>
                               <div className="space-y-1">
-                                <label className="text-[11px] text-muted-foreground">{isAr ? "يساوي القيمة" : "Equals value"}</label>
+                                <label className="text-[10px] text-muted-foreground font-medium">{isAr ? (cond.negate ? "لا يساوي" : "يساوي") : (cond.negate ? "not equal to" : "equals")}</label>
                                 <Input
                                   value={cond.value ?? ""}
                                   onChange={e => {
@@ -620,44 +666,47 @@ export function ProjectSettings() {
                                     updateField(idx, { conditions: next } as any);
                                   }}
                                   className="h-7 text-xs"
-                                  placeholder={isAr ? "القيمة المطلوبة..." : "Required value..."}
+                                  placeholder={isAr ? "القيمة..." : "Value..."}
                                   data-testid={`field-condvalue-${idx}-${ci}`}
                                 />
                               </div>
-                              <Button
-                                type="button" variant="ghost" size="icon"
-                                className="h-7 w-7 text-red-400 hover:text-red-600"
+                              <button
+                                type="button"
+                                className="h-7 w-7 flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors self-end"
                                 onClick={() => {
                                   const next = ((f as any).conditions || []).filter((_: any, i: number) => i !== ci);
                                   updateField(idx, { conditions: next } as any);
                                 }}
                                 data-testid={`button-remove-cond-${idx}-${ci}`}
+                                title={isAr ? "حذف الشرط" : "Remove condition"}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                              </button>
                             </div>
                           ))}
 
                           <Button
-                            type="button" variant="outline" size="sm" className="h-7 text-xs"
+                            type="button" variant="outline" size="sm" className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700"
                             onClick={() => {
                               const next = [...((f as any).conditions || []), { field: "", value: "", negate: false }];
                               updateField(idx, { conditions: next } as any);
                             }}
                             data-testid={`button-add-cond-${idx}`}
                           >
-                            <Plus className="h-3.5 w-3.5 ml-1" />{isAr ? "إضافة شرط" : "Add condition"}
+                            <Plus className="h-3.5 w-3.5 ml-1" />
+                            {isAr ? "إضافة شرط ظهور" : "Add condition"}
                           </Button>
 
-                          {((f as any).conditions || []).filter((c: any) => c.field).length > 0 && (
-                            <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-2 py-1.5">
-                              <span>⚡</span>
+                          {condCount > 0 && (
+                            <div className="flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-2.5 py-2 border border-amber-200 dark:border-amber-800">
+                              <GitBranch className="h-3 w-3 mt-0.5 flex-shrink-0" />
                               <span>
+                                {isAr ? "الحقل يظهر فقط عندما: " : "Field shows only when: "}
                                 {(f as any).conditions.filter((c: any) => c.field).map((c: any, i: number) => {
-                                  const label = fields.find(o => o.key === c.field)?.label || c.field;
+                                  const lbl = fields.find(o => o.key === c.field)?.label || c.field;
                                   const expr = isAr
-                                    ? `"${label}" ${c.negate ? "≠" : "="} "${c.value || (isAr ? '(أي قيمة)' : '(any value)')}"`
-                                    : `"${label}" ${c.negate ? "!=" : "="} "${c.value || '(any value)'}"`;
+                                    ? `«${lbl}» ${c.negate ? "≠" : "="} «${c.value || "أي قيمة"}»`
+                                    : `"${lbl}" ${c.negate ? "≠" : "="} "${c.value || "any value"}"`;
                                   return i === 0 ? expr : ` ${(f as any).conditionOperator === "OR" ? (isAr ? "أو" : "OR") : (isAr ? "و" : "AND")} ${expr}`;
                                 }).join("")}
                               </span>
@@ -665,43 +714,51 @@ export function ProjectSettings() {
                           )}
                         </div>
 
-                        {/* ── Access Control ── */}
-                        <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
-                          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                            {isAr ? "التحكم بالوصول" : "Access Control"}
-                          </p>
+                        {/* ── Validation ── */}
+                        <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            <Settings2 className="h-3.5 w-3.5 text-slate-400" />
+                            <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                              {isAr ? "قواعد التحقق (اختياري)" : "Validation Rules (optional)"}
+                            </p>
+                          </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
-                              <label className="text-[11px] text-muted-foreground">
-                                {isAr ? "مرئي لصلاحية" : "Visible to role"}
-                              </label>
-                              <select
-                                value={(f as any).visibleTo || "all"}
-                                onChange={e => updateField(idx, { visibleTo: e.target.value } as any)}
-                                className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-7"
-                                data-testid={`field-visibleto-${idx}`}
-                              >
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأدنى للأحرف" : "Min length"}</label>
+                              <Input type="number" min={0} value={(f as any).validationMin ?? ""} onChange={e => updateField(idx, { validationMin: e.target.value ? Number(e.target.value) : null } as any)} className="h-7 text-xs" placeholder="0" data-testid={`field-valmin-${idx}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأقصى للأحرف" : "Max length"}</label>
+                              <Input type="number" min={0} value={(f as any).validationMax ?? ""} onChange={e => updateField(idx, { validationMax: e.target.value ? Number(e.target.value) : null } as any)} className="h-7 text-xs" placeholder="—" data-testid={`field-valmax-${idx}`} />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-muted-foreground">{isAr ? "نمط Regex (للتحقق)" : "Regex pattern"}</label>
+                            <Input value={(f as any).validationRegex ?? ""} onChange={e => updateField(idx, { validationRegex: e.target.value || null } as any)} className="h-7 text-xs font-mono" placeholder="^[0-9]{10}$" dir="ltr" data-testid={`field-valregex-${idx}`} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-muted-foreground">{isAr ? "رسالة خطأ التحقق" : "Validation error message"}</label>
+                            <Input value={(f as any).validationMessage ?? ""} onChange={e => updateField(idx, { validationMessage: e.target.value || null } as any)} className="h-7 text-xs" placeholder={isAr ? "الرجاء إدخال قيمة صحيحة" : "Please enter a valid value"} data-testid={`field-valmsg-${idx}`} />
+                          </div>
+                        </div>
+
+                        {/* ── Access Control ── */}
+                        <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                          <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{isAr ? "التحكم بالوصول" : "Access Control"}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "مرئي لصلاحية" : "Visible to role"}</label>
+                              <select value={(f as any).visibleTo || "all"} onChange={e => updateField(idx, { visibleTo: e.target.value } as any)} className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-7" data-testid={`field-visibleto-${idx}`}>
                                 <option value="all">{isAr ? "الجميع" : "Everyone"}</option>
                                 <option value="admin">{isAr ? "المدير فقط" : "Admin only"}</option>
                                 <option value="editor">{isAr ? "المحرر فقط" : "Editor only"}</option>
                               </select>
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[11px] text-muted-foreground">
-                                {isAr ? "قراءة فقط بعد الإنشاء" : "Read-only after creation"}
-                              </label>
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "قراءة فقط بعد الإنشاء" : "Read-only after creation"}</label>
                               <div className="h-7 flex items-center gap-1.5">
-                                <input
-                                  type="checkbox"
-                                  checked={!!(f as any).isReadOnly}
-                                  onChange={e => updateField(idx, { isReadOnly: e.target.checked } as any)}
-                                  className="rounded"
-                                  id={`readonly-${idx}`}
-                                  data-testid={`field-readonly-${idx}`}
-                                />
-                                <label htmlFor={`readonly-${idx}`} className="text-xs">
-                                  {isAr ? "لا يمكن تعديله بعد الإنشاء" : "Cannot be edited after creation"}
-                                </label>
+                                <input type="checkbox" checked={!!(f as any).isReadOnly} onChange={e => updateField(idx, { isReadOnly: e.target.checked } as any)} className="rounded" id={`readonly-${idx}`} data-testid={`field-readonly-${idx}`} />
+                                <label htmlFor={`readonly-${idx}`} className="text-xs">{isAr ? "لا يمكن تعديله بعد الإنشاء" : "Cannot be edited after creation"}</label>
                               </div>
                             </div>
                           </div>
@@ -710,7 +767,8 @@ export function ProjectSettings() {
                       </div>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
               <div className="flex gap-2 pt-2">
                 <Button type="button" variant="outline" size="sm" onClick={addField} data-testid="button-add-field">
