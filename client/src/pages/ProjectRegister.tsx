@@ -20,6 +20,15 @@ import { isFieldVisible as checkFieldVisible } from "@/lib/fieldVisibility";
 
 const STEP_ICONS = [Shield, User, Briefcase, Building2, MapPin, ClipboardCheck, FileText];
 
+function escapeHtml(input: string): string {
+  return String(input)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 interface FormInfo {
   project: {
     id: string; name: string; formTitle: string; formSubtitle?: string;
@@ -236,15 +245,15 @@ export function ProjectRegister() {
         const val = vals[f.key];
         const display = (val !== undefined && val !== "" && val !== null) ? String(val) : "—";
         return `<tr>
-          <td class="label-cell">${f.label}</td>
-          <td class="value-cell">${display}</td>
+          <td class="label-cell">${escapeHtml(f.label)}</td>
+          <td class="value-cell">${escapeHtml(display)}</td>
         </tr>`;
       }).join("");
       return `
         <div class="section">
           <div class="section-header">
             <span class="section-num">${si + 1}</span>
-            <span class="section-title">${stepName}</span>
+            <span class="section-title">${escapeHtml(stepName)}</span>
           </div>
           <table class="data-table">
             <tbody>${rows}</tbody>
@@ -396,8 +405,8 @@ export function ProjectRegister() {
     <div class="report-header-right">
       <div class="logo-circle">${isAr ? "م" : "M"}</div>
       <div>
-        <div class="report-title">${project?.formTitle || (isAr ? "نموذج التسجيل" : "Registration Form")}</div>
-        <div class="report-subtitle">${project?.formSubtitle || (isAr ? "منصة مسارات" : "Masarat Platform")}</div>
+        <div class="report-title">${escapeHtml(project?.formTitle || (isAr ? "نموذج التسجيل" : "Registration Form"))}</div>
+        <div class="report-subtitle">${escapeHtml(project?.formSubtitle || (isAr ? "منصة مسارات" : "Masarat Platform"))}</div>
       </div>
     </div>
     <div class="report-meta">

@@ -52,4 +52,3 @@ build = ["npm", "run", "build"]
 [userenv.production]
 
 [userenv.shared]
-ENCRYPTION_KEY = "0ae9a05882fd153a5f3c6f187cf29619d4fb173265ad0cccd088e2ebfb418672"

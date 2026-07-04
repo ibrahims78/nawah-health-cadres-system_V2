@@ -20,7 +20,7 @@ function buildTransporter(cfg: SmtpConfig) {
     port,
     secure,
     auth: { user: cfg.user, pass: cfg.pass },
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: true },
     connectionTimeout: 15000,  // 15 seconds to connect
     greetingTimeout: 15000,    // 15 seconds for SMTP greeting
     socketTimeout: 20000,      // 20 seconds for data transfer
@@ -55,6 +55,15 @@ function roleLabel(role: string): string {
   return "مشاهد";
 }
 
+function escapeHtml(input: string): string {
+  return String(input)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function sendInvitationEmail(
   to: string,
   token: string,
@@ -76,16 +85,16 @@ export async function sendInvitationEmail(
       subject: `دعوة للانضمام إلى ${appName}`,
       html: `
         <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #1d4ed8; margin-top: 0;">📋 ${appName}</h2>
-          <p style="color: #374151;">تم دعوتك للانضمام إلى النظام بصلاحية: <strong>${roleLabel(role)}</strong></p>
+          <h2 style="color: #1d4ed8; margin-top: 0;">📋 ${escapeHtml(appName)}</h2>
+          <p style="color: #374151;">تم دعوتك للانضمام إلى النظام بصلاحية: <strong>${escapeHtml(roleLabel(role))}</strong></p>
           <p style="color: #374151;">انقر على الرابط أدناه لإنشاء حسابك:</p>
-          <a href="${inviteUrl}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;margin:16px 0;font-size:16px;">
+          <a href="${encodeURI(inviteUrl)}" style="background:#1d4ed8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;margin:16px 0;font-size:16px;">
             إنشاء الحساب
           </a>
-          <p style="color:#64748b;font-size:13px; margin-top: 16px;">⏱️ هذا الرابط صالح لـ ${expiryText} فقط</p>
+          <p style="color:#64748b;font-size:13px; margin-top: 16px;">⏱️ هذا الرابط صالح لـ ${escapeHtml(expiryText)} فقط</p>
           <hr style="border:none;border-top:1px solid #e2e8f0; margin: 16px 0;" />
           <p style="color:#94a3b8;font-size:12px;">إذا لم تطلب هذه الدعوة، يمكنك تجاهل هذا البريد بأمان.</p>
-          <p style="color:#94a3b8;font-size:12px;">الرابط المباشر: ${inviteUrl}</p>
+          <p style="color:#94a3b8;font-size:12px;">الرابط المباشر: ${escapeHtml(inviteUrl)}</p>
         </div>
       `,
     });

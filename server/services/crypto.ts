@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
+const AUTH_TAG_LENGTH = 16;
 
 function loadKey(): Buffer {
   const envKey = process.env.ENCRYPTION_KEY;
