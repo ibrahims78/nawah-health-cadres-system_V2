@@ -58,16 +58,32 @@ export function Layout({ children, projectId }: LayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Brand */}
-      <div className={cn("flex items-center gap-3 px-4 py-4 border-b border-slate-200 dark:border-slate-700/80 flex-shrink-0", !sidebarOpen && "justify-center px-2")}>
+      <div className={cn("flex items-center gap-3 px-4 py-4 border-b border-slate-200 dark:border-slate-700/80 flex-shrink-0 group/brand", !sidebarOpen && "justify-center px-2")}>
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0 shadow-md">
           <Activity className="h-5 w-5 text-white" />
         </div>
-        {sidebarOpen && (
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{appName}</p>
-            <p className="text-[10px] text-muted-foreground">{isAr ? "منصة إدارة نماذج التسجيل" : "Forms & Data Platform"}</p>
-          </div>
-        )}
+        <div className={cn(
+          "min-w-0 flex-1 transition-all duration-300",
+          sidebarOpen ? "opacity-100 w-auto" : "opacity-0 w-0 overflow-hidden"
+        )}>
+          <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate leading-tight whitespace-nowrap">{appName}</p>
+          <p className="text-[10px] text-muted-foreground whitespace-nowrap">{isAr ? "منصة إدارة نماذج التسجيل" : "Forms & Data Platform"}</p>
+        </div>
+        {/* Toggle button — visible on hover */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          data-testid="button-toggle-sidebar"
+          className={cn(
+            "flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center",
+            "text-slate-400 hover:text-primary hover:bg-primary/10 transition-all duration-150",
+            sidebarOpen ? "opacity-0 group-hover/brand:opacity-100" : "opacity-100"
+          )}
+          title={sidebarOpen ? (isAr ? "طي القائمة" : "Collapse") : (isAr ? "توسيع القائمة" : "Expand")}
+        >
+          {sidebarOpen
+            ? <ChevronRight className="h-3.5 w-3.5" />
+            : <ChevronLeft className="h-3.5 w-3.5" />}
+        </button>
       </div>
 
       {/* Project Picker */}
@@ -219,17 +235,11 @@ export function Layout({ children, projectId }: LayoutProps) {
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-900/95">
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden md:flex flex-col flex-shrink-0 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700/80 transition-all duration-300 relative shadow-sm",
+        "hidden md:flex flex-col flex-shrink-0 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700/80 relative shadow-sm",
+        "transition-[width] duration-300 ease-in-out overflow-hidden",
         sidebarOpen ? "w-60" : "w-[60px]"
       )}>
         <SidebarContent />
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="absolute -right-3 top-16 w-6 h-6 rounded-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center shadow-sm hover:border-primary/40 hover:text-primary z-20 transition-all"
-          data-testid="button-toggle-sidebar"
-        >
-          {sidebarOpen ? <ChevronRight className="h-3 w-3 text-slate-500" /> : <ChevronLeft className="h-3 w-3 text-slate-500" />}
-        </button>
       </aside>
 
       {/* Mobile overlay */}
