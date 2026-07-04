@@ -121,6 +121,12 @@ export function GlobalSettings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/projects/users-list"] }),
   });
 
+  const changeRoleMut = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
+      apiRequest("PATCH", `/api/projects/users/${userId}`, { role }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/projects/users-list"] }),
+  });
+
   const testSmtp = async () => {
     setSmtpTesting(true);
     setSmtpTestResult(null);
@@ -409,9 +415,16 @@ export function GlobalSettings() {
                           <td className="px-4 py-2.5 font-medium text-sm">{u.fullName}</td>
                           <td className="px-4 py-2.5 text-xs text-muted-foreground hidden md:table-cell">{u.email}</td>
                           <td className="px-4 py-2.5">
-                            <Badge variant={ROLE_VARIANT[u.role] || "secondary"}>
-                              {ROLE_LABEL[u.role] || u.role}
-                            </Badge>
+                            <select
+                              defaultValue={u.role}
+                              onChange={e => changeRoleMut.mutate({ userId: u.id, role: e.target.value })}
+                              className="h-7 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs font-medium"
+                              data-testid={`select-role-${u.id}`}
+                            >
+                              <option value="viewer">{ar ? "مشاهد" : "Viewer"}</option>
+                              <option value="editor">{ar ? "محرر" : "Editor"}</option>
+                              <option value="admin">{ar ? "مدير" : "Admin"}</option>
+                            </select>
                           </td>
                           <td className="px-4 py-2.5 text-xs text-muted-foreground hidden lg:table-cell">
                             {formatDate(u.lastLoginAt, ar)}
