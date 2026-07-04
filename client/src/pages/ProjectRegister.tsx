@@ -123,7 +123,23 @@ export function ProjectRegister() {
     }
   }, [codeVerified]);
 
-  const getStepFields = (stepNum: number) => fields.filter(f => (f.stepNumber || 1) === stepNum);
+  const isFieldVisible = (f: ProjectField, watched: Record<string, any>) => {
+    const cf = (f as any).conditionField as string | null | undefined;
+    const cv = (f as any).conditionValue as string | null | undefined;
+    if (!cf) return true;
+    const triggerVal = watched[cf];
+    if (cv === null || cv === undefined || cv === "") {
+      return triggerVal !== "" && triggerVal !== null && triggerVal !== undefined;
+    }
+    return String(triggerVal ?? "") === cv;
+  };
+
+  const getStepFields = (stepNum: number) =>
+    fields.filter(f => (f.stepNumber || 1) === stepNum && f.isVisible !== false);
+
+  const getVisibleStepFields = (stepNum: number, watched: Record<string, any>) =>
+    getStepFields(stepNum).filter(f => isFieldVisible(f, watched));
+
   const isReviewStep = step === totalSteps - 1;
   const progressPercent = totalSteps > 1 ? Math.round((step / (totalSteps - 1)) * 100) : 100;
 
@@ -152,8 +168,9 @@ export function ProjectRegister() {
   });
 
   const nextStep = async () => {
-    const stepFields = getStepFields(step + 1);
-    const keys = stepFields.map(f => f.key);
+    const watched = getValues();
+    const visibleFields = getVisibleStepFields(step + 1, watched);
+    const keys = visibleFields.map(f => f.key);
     const valid = await trigger(keys);
     if (valid) {
       if (fromReview) {
@@ -176,7 +193,7 @@ export function ProjectRegister() {
     const date = new Date().toLocaleDateString(isAr ? "ar-SY" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
     const sectionsHtml = printSteps.map((stepName, si) => {
-      const stepFields = getStepFields(si + 1);
+      const stepFields = getVisibleStepFields(si + 1, vals);
       if (stepFields.length === 0) return "";
       const rows = stepFields.map(f => {
         const val = vals[f.key];
@@ -533,7 +550,7 @@ export function ProjectRegister() {
   );
 
   /* ─── Main form ─── */
-  const currentStepFields = isReviewStep ? [] : getStepFields(step + 1);
+  const currentStepFields = isReviewStep ? [] : getVisibleStepFields(step + 1, watchedValues);
   const CurrentIcon = STEP_ICONS[step % STEP_ICONS.length];
   const allValues = getValues();
 
@@ -657,7 +674,7 @@ export function ProjectRegister() {
 
                 {/* One card per step */}
                 {steps.slice(0, -1).map((stepName, si) => {
-                  const stepFields = getStepFields(si + 1);
+                  const stepFields = getVisibleStepFields(si + 1, allValues);
                   if (stepFields.length === 0) return null;
                   const StepIcon = STEP_ICONS[si % STEP_ICONS.length];
                   const vals = allValues;
@@ -718,11 +735,11 @@ export function ProjectRegister() {
                     <p className="text-xs text-muted-foreground">
                       {isAr ? (
                         currentStepFields.filter(f => f.isRequired).length > 0
-                          ? `${currentStepFields.filter(f => f.isRequired).length} حقول إلزامية`
+                          ? `${currentStepFields.filter(f => f.isRequired).length} حقل إلزامي`
                           : "جميع الحقول اختيارية"
                       ) : (
                         currentStepFields.filter(f => f.isRequired).length > 0
-                          ? `${currentStepFields.filter(f => f.isRequired).length} required fields`
+                          ? `${currentStepFields.filter(f => f.isRequired).length} required field(s)`
                           : "All fields are optional"
                       )}
                     </p>

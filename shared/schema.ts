@@ -100,6 +100,8 @@ export const projectFields = pgTable("project_fields", {
   validationMax: integer("validation_max"),
   validationRegex: text("validation_regex"),
   validationMessage: text("validation_message"),
+  conditionField: text("condition_field"),
+  conditionValue: text("condition_value"),
 });
 
 // ============================================================
@@ -175,6 +177,8 @@ export const projectFieldSchema = z.object({
   validationMax: z.number().optional(),
   validationRegex: z.string().optional(),
   validationMessage: z.string().optional(),
+  conditionField: z.string().nullable().optional(),
+  conditionValue: z.string().nullable().optional(),
 });
 
 export const createProjectSchema = z.object({

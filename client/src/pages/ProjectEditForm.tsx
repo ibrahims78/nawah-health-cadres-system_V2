@@ -31,7 +31,7 @@ export function ProjectEditForm() {
   const fields = formInfo?.fields || [];
   const project = formInfo?.project;
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<Record<string, any>>();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<Record<string, any>>();
 
   useEffect(() => {
     if (record && !record.error) {
@@ -46,6 +46,19 @@ export function ProjectEditForm() {
     }).then(r => r.json()),
     onSuccess: (data) => { if (data.ok) setSaved(true); },
   });
+
+  const watchedValues = watch();
+
+  const isFieldVisible = (f: ProjectField) => {
+    const cf = (f as any).conditionField as string | null | undefined;
+    const cv = (f as any).conditionValue as string | null | undefined;
+    if (!cf) return true;
+    const triggerVal = watchedValues[cf];
+    if (cv === null || cv === undefined || cv === "") {
+      return triggerVal !== "" && triggerVal !== null && triggerVal !== undefined;
+    }
+    return String(triggerVal ?? "") === cv;
+  };
 
   const grouped = fields.reduce<Record<number, ProjectField[]>>((acc, f) => {
     const s = f.stepNumber || 1;
@@ -93,7 +106,7 @@ export function ProjectEditForm() {
                 {Array.isArray(project?.steps) ? (project.steps[Number(step) - 1] || (isAr ? `الخطوة ${step}` : `Step ${step}`)) : (isAr ? `الخطوة ${step}` : `Step ${step}`)}
               </h3>
               <div className="space-y-4">
-                {stepFields.filter(f => f.fieldType !== "autoincrement").map(f => (
+                {stepFields.filter(f => f.fieldType !== "autoincrement" && isFieldVisible(f)).map(f => (
                   <div key={f.id} className="space-y-1.5">
                     <Label className="text-sm font-medium">
                       {f.label}{f.isRequired && <span className="text-red-500 mr-1">*</span>}

@@ -169,7 +169,13 @@ async function initDB() {
         options JSONB,
         step_number INTEGER DEFAULT 1,
         order_index INTEGER DEFAULT 0,
-        placeholder TEXT
+        placeholder TEXT,
+        validation_min INTEGER,
+        validation_max INTEGER,
+        validation_regex TEXT,
+        validation_message TEXT,
+        condition_field TEXT,
+        condition_value TEXT
       );
 
       CREATE TABLE IF NOT EXISTS project_records (

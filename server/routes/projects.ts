@@ -324,6 +324,8 @@ router.post("/:id/fields", requireEditorOrAdmin, requireProjectOwnership, async 
         validationMax: f.validationMax ?? null,
         validationRegex: f.validationRegex ?? null,
         validationMessage: f.validationMessage ?? null,
+        conditionField: f.conditionField ?? null,
+        conditionValue: f.conditionValue ?? null,
       })));
     }
     res.json({ ok: true });

@@ -170,6 +170,7 @@ export function ProjectSettings() {
       fieldType: "text", isRequired: false, isVisible: true,
       options: null, stepNumber: 1, orderIndex: prev.length, placeholder: null,
       validationMin: null, validationMax: null, validationRegex: null, validationMessage: null,
+      conditionField: null, conditionValue: null,
     } as any]);
   };
 
@@ -380,59 +381,119 @@ export function ProjectSettings() {
                       </div>
                     )}
 
-                    {/* Validation section */}
+                    {/* Validation + Condition section */}
                     {expandedFieldIdx === idx && (
-                      <div className="pr-6 pt-2 border-t border-slate-200 dark:border-slate-700 space-y-3">
-                        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                          {isAr ? "قواعد التحقق (اختياري)" : "Validation Rules (optional)"}
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
+                      <div className="pr-6 pt-2 border-t border-slate-200 dark:border-slate-700 space-y-4">
+
+                        {/* ── Validation ── */}
+                        <div className="space-y-3">
+                          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                            {isAr ? "قواعد التحقق (اختياري)" : "Validation Rules (optional)"}
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأدنى للأحرف" : "Min length"}</label>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={(f as any).validationMin ?? ""}
+                                onChange={e => updateField(idx, { validationMin: e.target.value ? Number(e.target.value) : null } as any)}
+                                className="h-7 text-xs"
+                                placeholder="0"
+                                data-testid={`field-valmin-${idx}`}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأقصى للأحرف" : "Max length"}</label>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={(f as any).validationMax ?? ""}
+                                onChange={e => updateField(idx, { validationMax: e.target.value ? Number(e.target.value) : null } as any)}
+                                className="h-7 text-xs"
+                                placeholder="—"
+                                data-testid={`field-valmax-${idx}`}
+                              />
+                            </div>
+                          </div>
                           <div className="space-y-1">
-                            <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأدنى للأحرف" : "Min length"}</label>
+                            <label className="text-[11px] text-muted-foreground">{isAr ? "نمط Regex (للتحقق)" : "Regex pattern"}</label>
                             <Input
-                              type="number"
-                              min={0}
-                              value={(f as any).validationMin ?? ""}
-                              onChange={e => updateField(idx, { validationMin: e.target.value ? Number(e.target.value) : null } as any)}
-                              className="h-7 text-xs"
-                              placeholder="0"
-                              data-testid={`field-valmin-${idx}`}
+                              value={(f as any).validationRegex ?? ""}
+                              onChange={e => updateField(idx, { validationRegex: e.target.value || null } as any)}
+                              className="h-7 text-xs font-mono"
+                              placeholder="^[0-9]{10}$"
+                              dir="ltr"
+                              data-testid={`field-valregex-${idx}`}
                             />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[11px] text-muted-foreground">{isAr ? "الحد الأقصى للأحرف" : "Max length"}</label>
+                            <label className="text-[11px] text-muted-foreground">{isAr ? "رسالة خطأ التحقق" : "Validation error message"}</label>
                             <Input
-                              type="number"
-                              min={0}
-                              value={(f as any).validationMax ?? ""}
-                              onChange={e => updateField(idx, { validationMax: e.target.value ? Number(e.target.value) : null } as any)}
+                              value={(f as any).validationMessage ?? ""}
+                              onChange={e => updateField(idx, { validationMessage: e.target.value || null } as any)}
                               className="h-7 text-xs"
-                              placeholder="—"
-                              data-testid={`field-valmax-${idx}`}
+                              placeholder={isAr ? "الرجاء إدخال رقم صحيح" : "Please enter a valid value"}
+                              data-testid={`field-valmsg-${idx}`}
                             />
                           </div>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[11px] text-muted-foreground">{isAr ? "نمط Regex (للتحقق)" : "Regex pattern"}</label>
-                          <Input
-                            value={(f as any).validationRegex ?? ""}
-                            onChange={e => updateField(idx, { validationRegex: e.target.value || null } as any)}
-                            className="h-7 text-xs font-mono"
-                            placeholder="^[0-9]{10}$"
-                            dir="ltr"
-                            data-testid={`field-valregex-${idx}`}
-                          />
+
+                        {/* ── Conditional Visibility ── */}
+                        <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                            {isAr ? "ظهور مشروط (اختياري)" : "Conditional Visibility (optional)"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {isAr
+                              ? "أظهر هذا الحقل فقط عندما يكون حقل آخر يساوي قيمة محددة."
+                              : "Show this field only when another field equals a specific value."}
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">
+                                {isAr ? "عندما يكون الحقل" : "When field"}
+                              </label>
+                              <select
+                                value={(f as any).conditionField ?? ""}
+                                onChange={e => updateField(idx, { conditionField: e.target.value || null, conditionValue: e.target.value ? (f as any).conditionValue : null } as any)}
+                                className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs h-7"
+                                data-testid={`field-condfield-${idx}`}
+                              >
+                                <option value="">{isAr ? "— لا شرط —" : "— No condition —"}</option>
+                                {fields
+                                  .filter((other, oi) => oi !== idx && other.fieldType !== "autoincrement")
+                                  .map(other => (
+                                    <option key={other.id} value={other.key}>{other.label}</option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">
+                                {isAr ? "يساوي القيمة" : "Equals value"}
+                              </label>
+                              <Input
+                                value={(f as any).conditionValue ?? ""}
+                                onChange={e => updateField(idx, { conditionValue: e.target.value || null } as any)}
+                                className="h-7 text-xs"
+                                placeholder={isAr ? "القيمة المطلوبة..." : "Required value..."}
+                                disabled={!(f as any).conditionField}
+                                data-testid={`field-condvalue-${idx}`}
+                              />
+                            </div>
+                          </div>
+                          {(f as any).conditionField && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-2 py-1.5">
+                              <span>⚡</span>
+                              <span>
+                                {isAr
+                                  ? `هذا الحقل يظهر فقط عندما "${fields.find(o => o.key === (f as any).conditionField)?.label || (f as any).conditionField}" = "${(f as any).conditionValue || '(أي قيمة)'}"`
+                                  : `This field shows only when "${fields.find(o => o.key === (f as any).conditionField)?.label || (f as any).conditionField}" = "${(f as any).conditionValue || '(any value)'}"` }
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[11px] text-muted-foreground">{isAr ? "رسالة خطأ التحقق" : "Validation error message"}</label>
-                          <Input
-                            value={(f as any).validationMessage ?? ""}
-                            onChange={e => updateField(idx, { validationMessage: e.target.value || null } as any)}
-                            className="h-7 text-xs"
-                            placeholder={isAr ? "الرجاء إدخال رقم صحيح" : "Please enter a valid value"}
-                            data-testid={`field-valmsg-${idx}`}
-                          />
-                        </div>
+
                       </div>
                     )}
                   </div>

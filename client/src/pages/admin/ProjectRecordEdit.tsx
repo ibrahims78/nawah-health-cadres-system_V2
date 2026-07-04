@@ -188,6 +188,19 @@ export function ProjectRecordEdit() {
     },
   });
 
+  const watchedValues = watch();
+
+  const isFieldVisible = (f: ProjectField) => {
+    const cf = (f as any).conditionField as string | null | undefined;
+    const cv = (f as any).conditionValue as string | null | undefined;
+    if (!cf) return true;
+    const triggerVal = watchedValues[cf];
+    if (cv === null || cv === undefined || cv === "") {
+      return triggerVal !== "" && triggerVal !== null && triggerVal !== undefined;
+    }
+    return String(triggerVal ?? "") === cv;
+  };
+
   const grouped = fields.reduce<Record<number, ProjectField[]>>((acc, f) => {
     const s = f.stepNumber || 1;
     if (!acc[s]) acc[s] = [];
@@ -251,7 +264,7 @@ export function ProjectRecordEdit() {
                 {stepName}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {stepFields.map(f => (
+                {stepFields.filter(isFieldVisible).map(f => (
                   <div key={f.id} className={cn("space-y-1.5", f.fieldType === "textarea" && "md:col-span-2")}>
                     <Label className="text-xs font-medium">
                       {f.label}
