@@ -5,7 +5,7 @@ import { eq, desc, count, gte, and, ilike, or, gt, sql } from "drizzle-orm";
 import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/auth.js";
 import { encrypt, decrypt } from "../services/crypto.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
-import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, extractSpreadsheetId } from "../services/projectSheets.js";
+import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, exportToProjectSheet, extractSpreadsheetId } from "../services/projectSheets.js";
 import { testTelegramBot, getTelegramUpdates } from "../services/telegram.js";
 import { sendInvitationEmail, testEmailConnection } from "../services/email.js";
 import { v4 as uuidv4 } from "uuid";
@@ -697,6 +697,11 @@ router.post("/:id/check-sheet-columns", requireEditorOrAdmin, requireProjectOwne
 router.post("/:id/import-from-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
   const { syncDeleted } = req.body;
   const result = await importFromProjectSheet(String(req.params.id), !!syncDeleted);
+  res.json(result);
+});
+
+router.post("/:id/export-to-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+  const result = await exportToProjectSheet(String(req.params.id));
   res.json(result);
 });
 

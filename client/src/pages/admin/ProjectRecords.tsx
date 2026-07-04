@@ -13,7 +13,7 @@ import {
   ChevronRight, ChevronLeft, Users, Copy, Check,
   Columns3, X, ChevronsLeft, ChevronsRight,
   Printer, Filter, RefreshCw, SkipForward,
-  Link, Upload, Wrench,
+  Link, Upload, Wrench, ArrowUpToLine,
 } from "lucide-react";
 import type { ProjectRecord, ProjectField } from "@shared/schema";
 import { cn } from "@/lib/utils";
@@ -108,6 +108,11 @@ export function ProjectRecords() {
   // Fix headers state
   const [fixingHeaders, setFixingHeaders] = useState(false);
   const [fixResult, setFixResult] = useState<string | null>(null);
+
+  // Export to sheets state
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<{ ok: boolean; message: string; exported?: number } | null>(null);
 
   // Copy link
   const [copiedLink, setCopiedLink] = useState(false);
@@ -223,6 +228,20 @@ export function ProjectRecords() {
     }
   };
 
+  const doExport = async () => {
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const res: any = await apiRequest("POST", `/api/projects/${id}/export-to-sheets`, {});
+      setExportResult(res);
+      if (res.ok) qc.invalidateQueries({ queryKey: ["/api/projects", id, "records"] });
+    } catch (err: any) {
+      setExportResult({ ok: false, message: `❌ ${err.message}` });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const activeFilterCount = Object.values(fieldFilters).filter(Boolean).length;
 
@@ -261,10 +280,16 @@ export function ProjectRecords() {
               {fixingHeaders ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
             </Button>
 
+            {/* Export DB → Sheet */}
+            <Button variant="outline" size="sm" onClick={() => { setExportOpen(true); setExportResult(null); }} data-testid="button-export-sheets">
+              <ArrowUpToLine className="h-4 w-4 ml-1" />
+              {isAr ? "رفع إلى Sheet" : "Push to Sheet"}
+            </Button>
+
             {/* Import from Sheets */}
             <Button variant="outline" size="sm" onClick={() => { setImportOpen(true); setImportResult(null); }} data-testid="button-import-sheets">
               <Upload className="h-4 w-4 ml-1" />
-              {isAr ? "استيراد Sheets" : "Import Sheets"}
+              {isAr ? "جلب من Sheet" : "Pull from Sheet"}
             </Button>
 
             {/* Copy form link */}
@@ -638,6 +663,52 @@ export function ProjectRecords() {
                 ) : (
                   <><Upload className="h-4 w-4 ml-2" /> {isAr ? "بدء المزامنة" : "Start Sync"}</>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Export Dialog ─── */}
+        <Dialog open={exportOpen} onOpenChange={o => { setExportOpen(o); if (!o) setExportResult(null); }}>
+          <DialogContent className="sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ArrowUpToLine className="h-5 w-5 text-primary" />
+                {isAr ? "رفع إلى Google Sheets" : "Push to Google Sheets"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {isAr
+                  ? "سيتم رفع جميع سجلات المنصة إلى ملف الـ Spreadsheet المرتبط — الاتجاه: قاعدة البيانات ← Sheet."
+                  : "All platform records will be pushed to the linked Spreadsheet — direction: Database → Sheet."}
+              </p>
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 flex items-start gap-2">
+                <span className="text-amber-600 text-base mt-0.5">⚠️</span>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                  {isAr
+                    ? "سيتم محو محتوى الـ Sheet الحالي كاملاً (بما فيه أي تعديلات يدوية) وإعادة كتابته من بيانات المنصة."
+                    : "The current Sheet content (including any manual edits) will be fully erased and rewritten from platform data."}
+                </p>
+              </div>
+              {exportResult && (
+                <div className={`p-4 rounded-lg border-l-4 text-sm ${exportResult.ok ? "bg-green-50 border-green-400 text-green-800" : "bg-red-50 border-red-400 text-red-800"}`}>
+                  <p className="font-bold mb-1">{exportResult.ok ? (isAr ? "✅ اكتمل الرفع" : "✅ Push completed") : (isAr ? "❌ فشل الرفع" : "❌ Push failed")}</p>
+                  <p className="text-xs opacity-90">{exportResult.message}</p>
+                  {exportResult.ok && exportResult.exported !== undefined && (
+                    <div className="mt-2 pt-2 border-t border-green-200">
+                      <p className="text-lg font-black">{exportResult.exported} <span className="text-xs font-normal">{isAr ? "سجل" : "records"}</span></p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setExportOpen(false)} disabled={exporting}>{isAr ? "إغلاق" : "Close"}</Button>
+              <Button onClick={doExport} disabled={exporting} className="min-w-[120px] bg-primary">
+                {exporting
+                  ? <><Loader2 className="h-4 w-4 animate-spin ml-2" /> {isAr ? "جاري الرفع..." : "Pushing..."}</>
+                  : <><ArrowUpToLine className="h-4 w-4 ml-2" /> {isAr ? "رفع الآن" : "Push Now"}</>}
               </Button>
             </DialogFooter>
           </DialogContent>

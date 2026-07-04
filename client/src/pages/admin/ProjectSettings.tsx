@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Save, Loader2, Plus, Trash2, GripVertical, ArrowRight, ExternalLink,
   CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp,
-  Upload, TableProperties, Wrench, RefreshCw, BotMessageSquare,
+  Upload, TableProperties, Wrench, RefreshCw, BotMessageSquare, ArrowUpToLine,
 } from "lucide-react";
 import type { Project, ProjectField } from "@shared/schema";
 import { useLang } from "@/context/LanguageContext";
@@ -39,7 +39,8 @@ export function ProjectSettings() {
   const [fixResult, setFixResult] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<any | null>(null);
   const [syncDeleted, setSyncDeleted] = useState(false);
-  const [sheetsLoading, setSheetsLoading] = useState<"check" | "fix" | "import" | null>(null);
+  const [sheetsLoading, setSheetsLoading] = useState<"check" | "fix" | "import" | "export" | null>(null);
+  const [exportResult, setExportResult] = useState<string | null>(null);
 
   // Telegram-specific state
   const [chatIdLoading, setChatIdLoading] = useState(false);
@@ -123,6 +124,13 @@ export function ProjectSettings() {
     const res: any = await apiRequest("POST", `/api/projects/${id}/import-from-sheets`, { syncDeleted }).catch(e => ({ ok: false, message: `❌ ${e.message}` }));
     setImportResult(res);
     if (res.ok) qc.invalidateQueries({ queryKey: ["/api/projects", id, "records"] });
+    setSheetsLoading(null);
+  };
+
+  const doExport = async () => {
+    setSheetsLoading("export"); setExportResult(null);
+    const res: any = await apiRequest("POST", `/api/projects/${id}/export-to-sheets`, {}).catch(e => ({ ok: false, message: `❌ ${e.message}` }));
+    setExportResult(res.message);
     setSheetsLoading(null);
   };
 
@@ -575,7 +583,8 @@ export function ProjectSettings() {
                 <h3 className="text-sm font-bold">{isAr ? "أدوات الصيانة والمزامنة" : "Maintenance & Sync Tools"}</h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* ① Check Columns */}
                 <div className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg space-y-2">
                   <p className="text-xs font-bold">{isAr ? "التحقق من الأعمدة" : "Check Columns"}</p>
                   <p className="text-[10px] text-muted-foreground">{isAr ? "فحص ما إذا كانت ترويسات الـ Sheet تطابق حقول المشروع." : "Verify if Sheet headers match project fields."}</p>
@@ -585,6 +594,7 @@ export function ProjectSettings() {
                   </Button>
                 </div>
 
+                {/* ② Fix Headers */}
                 <div className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg space-y-2">
                   <p className="text-xs font-bold">{isAr ? "إصلاح الترويسات" : "Fix Headers"}</p>
                   <p className="text-[10px] text-muted-foreground">{isAr ? "إضافة الأعمدة الناقصة أو إعادة ترتيبها في ملف الـ Sheet." : "Add missing columns or reorder them in the Sheet."}</p>
@@ -594,15 +604,26 @@ export function ProjectSettings() {
                   </Button>
                 </div>
 
+                {/* ③ Export: DB → Sheet */}
+                <div className="p-3 border border-primary/30 dark:border-primary/40 bg-primary/5 rounded-lg space-y-2">
+                  <p className="text-xs font-bold text-primary">{isAr ? "⬆ رفع إلى Sheet" : "⬆ Push to Sheet"}</p>
+                  <p className="text-[10px] text-muted-foreground">{isAr ? "يمحو محتوى الـ Sheet ويعيد كتابته بجميع سجلات المنصة (DB → Sheet)." : "Clears the Sheet and rewrites all platform records (DB → Sheet)."}</p>
+                  <Button size="sm" className="w-full h-8 text-[11px]" onClick={doExport} disabled={!!sheetsLoading}>
+                    {sheetsLoading === "export" ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <ArrowUpToLine className="h-3 w-3 ml-1" />}
+                    {isAr ? "رفع الآن" : "Push Now"}
+                  </Button>
+                </div>
+
+                {/* ④ Import: Sheet → DB */}
                 <div className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg space-y-2">
-                  <p className="text-xs font-bold">{isAr ? "استيراد البيانات" : "Import Data"}</p>
+                  <p className="text-xs font-bold">{isAr ? "⬇ جلب من Sheet" : "⬇ Pull from Sheet"}</p>
                   <div className="flex items-center gap-2 pb-1">
                     <input type="checkbox" checked={syncDeleted} onChange={e => setSyncDeleted(e.target.checked)} id="sd-set" className="rounded" />
                     <label htmlFor="sd-set" className="text-[10px]">{isAr ? "مزامنة الحذف" : "Sync Deletion"}</label>
                   </div>
                   <Button size="sm" variant="secondary" className="w-full h-8 text-[11px]" onClick={doImport} disabled={!!sheetsLoading}>
                     {sheetsLoading === "import" ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Upload className="h-3 w-3 ml-1" />}
-                    {isAr ? "مزامنة الآن" : "Sync Now"}
+                    {isAr ? "جلب الآن" : "Pull Now"}
                   </Button>
                 </div>
               </div>
@@ -638,6 +659,7 @@ export function ProjectSettings() {
               )}
 
               {fixResult && <ResultBox msg={fixResult} />}
+              {exportResult && <ResultBox msg={exportResult} />}
               {importResult && <ResultBox msg={importResult.message || (importResult.ok ? (isAr ? "✅ تمت المزامنة بنجاح" : "✅ Sync completed successfully") : (isAr ? "❌ فشلت المزامنة" : "❌ Sync failed"))} />}
             </Card>
           </div>

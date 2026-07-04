@@ -1,8 +1,8 @@
 import { google } from "googleapis";
 import { db } from "../db.js";
-import { projects, projectFields } from "../../shared/schema.js";
+import { projects, projectFields, projectRecords as prTable } from "../../shared/schema.js";
 import { decrypt } from "./crypto.js";
-import { eq } from "drizzle-orm";
+import { eq, asc, and, notInArray } from "drizzle-orm";
 
 // ── Auth client ───────────────────────────────────────────────
 
@@ -438,9 +438,6 @@ export async function importFromProjectSheet(
       if (key) colMap[i] = key;
     }
 
-    const { projectRecords: prTable } = await import("../../shared/schema.js");
-    const { eq: eqFn, and: andFn, notInArray } = await import("drizzle-orm");
-
     let added = 0, updated = 0, skipped = 0, deleted = 0;
 
     // Collect all valid seqNums seen in the Sheet (used by syncDeleted below)
@@ -460,12 +457,12 @@ export async function importFromProjectSheet(
 
         const existing = await db.select({ id: prTable.id })
           .from(prTable)
-          .where(andFn(eqFn(prTable.projectId, projectId), eqFn(prTable.sequentialNumber, seqNum)));
+          .where(and(eq(prTable.projectId, projectId), eq(prTable.sequentialNumber, seqNum)));
 
         if (existing.length > 0) {
           await db.update(prTable)
             .set({ data, updatedAt: new Date() })
-            .where(eqFn(prTable.id, existing[0].id));
+            .where(eq(prTable.id, existing[0].id));
           updated++;
         } else {
           await db.insert(prTable).values({
@@ -485,12 +482,12 @@ export async function importFromProjectSheet(
     if (syncDeleted && sheetSeqNums.length > 0) {
       const toDelete = await db.select({ id: prTable.id })
         .from(prTable)
-        .where(andFn(
-          eqFn(prTable.projectId, projectId),
+        .where(and(
+          eq(prTable.projectId, projectId),
           notInArray(prTable.sequentialNumber, sheetSeqNums)
         ));
       for (const rec of toDelete) {
-        await db.delete(prTable).where(eqFn(prTable.id, rec.id));
+        await db.delete(prTable).where(eq(prTable.id, rec.id));
         deleted++;
       }
     }
@@ -504,5 +501,80 @@ export async function importFromProjectSheet(
     };
   } catch (err: any) {
     return { ok: false, message: `❌ ${err.message}`, added: 0, updated: 0, skipped: 0 };
+  }
+}
+
+// ── Export: DB → Sheet ────────────────────────────────────────
+
+/**
+ * Full push: overwrites the entire Sheet with all records from DB.
+ * Direction: DB → Sheet.
+ *
+ * What happens to manual edits in the Sheet:
+ *   Every cell in the sheet (A:ZZ) is cleared first, then all DB records
+ *   are written from scratch. Any manual row additions, edits, or deletions
+ *   made directly in the Sheet are permanently overwritten — DB is the
+ *   source of truth.
+ *
+ * After writing, sheetsRowIndex is updated for every record in DB so that
+ *   future per-record updates/deletes target the correct row.
+ */
+export async function exportToProjectSheet(projectId: string): Promise<{
+  ok: boolean; message: string; exported: number;
+}> {
+  try {
+    const { sheets, proj } = await getSheetsClient(projectId);
+    if (!proj.googleSheetId) {
+      return { ok: false, message: "❌ لم يتم إدخال Sheet ID أو رابط الـ Sheet", exported: 0 };
+    }
+
+    const fields = await getProjectFields(projectId);
+    const desiredName = sanitizeSheetTabName(proj.googleSheetName || proj.name || "بيانات");
+    const sheetName = await resolveSheetTab(sheets, proj.googleSheetId, desiredName, true);
+
+    // Fetch all records ordered by sequentialNumber
+    const records = await db
+      .select()
+      .from(prTable)
+      .where(eq(prTable.projectId, projectId))
+      .orderBy(asc(prTable.sequentialNumber));
+
+    // Build 2-D array: row 1 = headers, rows 2+ = data
+    const header = ["م", ...fields.map(f => f.label)];
+    const dataRows = records.map(r => [
+      String(r.sequentialNumber ?? ""),
+      ...fields.map(f => String((r.data as Record<string, any>)?.[f.key] ?? "")),
+    ]);
+
+    // ① Clear the entire data area (keeps the sheet structure but wipes values)
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: proj.googleSheetId,
+      range: sheetRange(sheetName, "A:ZZ"),
+    });
+
+    // ② Write header + all rows in one call starting at A1
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: proj.googleSheetId,
+      range: sheetRange(sheetName, "A1"),
+      valueInputOption: "RAW",
+      requestBody: { values: [header, ...dataRows] },
+    });
+
+    // ③ Sync sheetsRowIndex in DB: row 2 = first record, row 3 = second, …
+    for (let i = 0; i < records.length; i++) {
+      await db
+        .update(prTable)
+        .set({ sheetsRowIndex: i + 2 })
+        .where(eq(prTable.id, records[i].id));
+    }
+
+    return {
+      ok: true,
+      message: `✅ تم الرفع — ${records.length} سجل → التبويب "${sheetName}"`,
+      exported: records.length,
+    };
+  } catch (err: any) {
+    console.error("[ProjectSheets] exportToProjectSheet error:", err);
+    return { ok: false, message: `❌ ${err.message}`, exported: 0 };
   }
 }
