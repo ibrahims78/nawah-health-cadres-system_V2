@@ -1,6 +1,8 @@
-# Nawah Healthcare Staff Management System (مسارات)
+# مسارات — Masarat Sheet2Site
 
-A full-stack bilingual (Arabic/English) healthcare staff management system. Staff submit registration data through a multi-step public form; admins manage records in a private dashboard.
+A full-stack bilingual (Arabic/English) multi-project platform that converts any spreadsheet (Excel) into a multi-step public data-registration website, with an admin dashboard, secure file uploads, and live Google Sheets / Google Drive sync.
+
+Each "project" is an independent form: admins/editors can create unlimited projects, define custom dynamic fields (imported from an Excel file or built from scratch), and share a public registration link. End users submit data (with optional file attachments) through the public multi-step form; admins/editors manage records, files, and integrations in a private dashboard.
 
 ## Tech Stack
 
@@ -38,14 +40,21 @@ npm run dev
 
 ## First Run
 
-On a fresh database, the app shows a setup wizard to create the first admin account. After that, admins can create projects, define custom form fields, and manage staff records.
+On a fresh database, the app shows a setup wizard to create the first admin account. After that, admins can create projects (optionally importing an Excel file to auto-generate fields), define custom form fields, and manage submitted records.
+
+## Roles
+
+- **Admin:** full access to all projects, users, and global settings.
+- **Editor:** full access only to projects they created (enforced server-side via `requireProjectOwnership` / `requireProjectReadAccess`).
+- **Viewer:** read/export access to all projects, no write access.
 
 ## Project Structure
 
 ```
-client/     React frontend
+client/     React frontend (public multi-step form + admin dashboard)
 server/     Express backend (routes/, middleware/, services/)
 shared/     Drizzle schema + Zod validators shared by both
+docs/       Feature plans and audit reports
 ```
 
 ## Database
