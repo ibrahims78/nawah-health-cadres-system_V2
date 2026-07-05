@@ -235,7 +235,7 @@ export const updateProjectSchema = z.object({
   formTitle: z.string().optional(),
   formSubtitle: z.string().optional(),
   invitationCode: z.string().optional(),
-  editTokenHours: z.number().int().min(1).max(8760).optional(),
+  editTokenHours: z.coerce.number().int().min(1).max(8760).optional(),
   formEnabled: z.boolean().optional(),
   formDisabledMessage: z.string().optional(),
   steps: z.array(z.string()).optional(),

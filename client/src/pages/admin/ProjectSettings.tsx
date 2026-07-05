@@ -329,7 +329,7 @@ export function ProjectSettings() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">{isAr ? "مدة صلاحية رابط التعديل (ساعة)" : "Edit Token Validity (hours)"}</Label>
-                <Input {...register("editTokenHours")} type="number" className="w-32" data-testid="input-editTokenHours" />
+                <Input {...register("editTokenHours", { valueAsNumber: true })} type="number" className="w-32" data-testid="input-editTokenHours" />
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                 <div>
