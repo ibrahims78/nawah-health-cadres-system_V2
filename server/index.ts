@@ -140,12 +140,17 @@ app.get("/uploads/*", async (req, res) => {
     }
     try {
       const [record] = await db
-        .select({ id: projectRecords.id, tokenExpiresAt: projectRecords.tokenExpiresAt })
+        .select({ id: projectRecords.id, tokenExpiresAt: projectRecords.tokenExpiresAt, data: projectRecords.data })
         .from(projectRecords)
         .where(and(eq(projectRecords.projectId, project), eq(projectRecords.editToken, token as any)));
       if (!record) return res.status(401).json({ error: "رمز غير صالح" });
       if (record.tokenExpiresAt && record.tokenExpiresAt < new Date()) {
         return res.status(410).json({ error: "انتهت صلاحية الرابط" });
+      }
+      // IDOR guard: verify the requested file is actually referenced in this record's data
+      const recordDataStr = JSON.stringify(record.data ?? {});
+      if (!recordDataStr.includes(filename)) {
+        return res.status(403).json({ error: "لا تملك صلاحية الوصول لهذا الملف" });
       }
     } catch {
       return res.status(500).json({ error: "خطأ في التحقق" });
