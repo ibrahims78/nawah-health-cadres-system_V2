@@ -1228,15 +1228,14 @@ router.post("/:id/sync-drive", requireEditorOrAdmin, requireProjectOwnership, as
           const fileUrl = recordData[fieldKey];
           if (!fileUrl || !String(fileUrl).startsWith("/uploads/")) continue;
 
-          // basename used only for Drive upload display name and MIME detection
+          // displayName uses the leaf filename; localRelPath is the full relative path for reading
           const localFilename = path.basename(String(fileUrl));
-          // Full relative path (handles both flat and organised uploads)
           const localRelPath = String(fileUrl).slice("/uploads/".length);
           const mimeType = driveStorage.guessMimeType(localFilename);
 
           const { fileId, driveUrl } = await driveStorage.uploadLocalFileToDrive(pid, {
-            localFilename,
-            displayName: localFilename,
+            localFilename: localRelPath, // full relative path so the service finds nested files
+            displayName: localFilename,  // basename shown in Drive
             mimeType,
             folderId: recordFolderId,
           });
@@ -1340,14 +1339,19 @@ router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requirePr
     const localFilesToDelete: string[] = [];
 
     for (const fieldKey of filesToSync) {
-      const localFilename = path.basename(String(recordData[fieldKey]));
+      const fileUrl = String(recordData[fieldKey]);
+      const localFilename = path.basename(fileUrl);          // basename for display name in Drive
+      const localRelPath  = fileUrl.slice("/uploads/".length); // full relative path for reading
       const mimeType = driveStorage.guessMimeType(localFilename);
       const { fileId, driveUrl } = await driveStorage.uploadLocalFileToDrive(pid, {
-        localFilename, displayName: localFilename, mimeType, folderId: recordFolderId,
+        localFilename: localRelPath, // full relative path so the service finds nested files
+        displayName: localFilename,  // basename shown in Drive
+        mimeType,
+        folderId: recordFolderId,
       });
       updatedDriveFiles[fieldKey] = { fileId, driveUrl, originalName: localFilename, syncedAt: new Date().toISOString() };
       updatedData[fieldKey] = driveUrl;
-      if (mode === "delete_local") localFilesToDelete.push(localFilename);
+      if (mode === "delete_local") localFilesToDelete.push(localRelPath); // full path for unlink
     }
 
     const updatePayload: Record<string, any> = {
@@ -1363,8 +1367,10 @@ router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requirePr
       updateRecordRow(pid, record.sheetsRowIndex, updatedData, record.sequentialNumber || 0).catch(console.error);
     }
     if (mode === "delete_local") {
-      for (const fname of localFilesToDelete) {
-        fs.unlink(path.join(uploadsDir, fname), () => {});
+      for (const relPath of localFilesToDelete) {
+        const normalized = path.normalize(relPath).replace(/^(\.\.[/\\])+/, "");
+        const filePath = path.join(uploadsDir, normalized);
+        if (filePath.startsWith(uploadsDir + path.sep)) fs.unlink(filePath, () => {});
       }
     }
 
@@ -1380,12 +1386,51 @@ router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requirePr
 
 router.delete("/users/:userId", requireAdmin, async (req: Request, res: Response) => {
   try {
+    const uid = String(req.params.userId);
+
+    // Prevent deleting the last admin
     const adminUsers = await db.select({ count: count() }).from(users).where(eq(users.role, "admin"));
     if (Number(adminUsers[0]?.count || 0) <= 1) {
-      const [target] = await db.select().from(users).where(eq(users.id, String(req.params.userId)));
+      const [target] = await db.select().from(users).where(eq(users.id, uid));
       if (target?.role === "admin") return res.status(400).json({ error: "لا يمكن حذف آخر مدير" });
     }
-    await db.delete(users).where(eq(users.id, String(req.params.userId)));
+
+    // ── Cascade cleanup ──────────────────────────────────────────────────────
+    // 1. Load all projects created by this user
+    const userProjects = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.createdBy, uid));
+
+    const projectIds = userProjects.map(p => p.id);
+
+    if (projectIds.length > 0) {
+      // 2. Load all records belonging to those projects (to delete their local files)
+      const allRecords = await db
+        .select({ data: projectRecords.data })
+        .from(projectRecords)
+        .where(inArray(projectRecords.projectId, projectIds));
+
+      // 3. Delete local files for every record (best-effort, non-blocking)
+      for (const rec of allRecords) {
+        if (rec.data && typeof rec.data === "object") {
+          Object.values(rec.data as Record<string, any>).forEach(val => {
+            if (typeof val === "string" && val.startsWith("/uploads/")) {
+              const relativePath = val.slice("/uploads/".length);
+              const normalized = path.normalize(relativePath).replace(/^(\.\.[/\\])+/, "");
+              const filePath = path.join(uploadsDir, normalized);
+              if (filePath.startsWith(uploadsDir + path.sep)) fs.unlink(filePath, () => {});
+            }
+          });
+        }
+      }
+
+      // 4. Delete the projects — DB cascades to projectFields, projectRecords, projectAuditLog
+      await db.delete(projects).where(inArray(projects.id, projectIds));
+    }
+
+    // 5. Delete the user account itself
+    await db.delete(users).where(eq(users.id, uid));
     res.json({ ok: true });
   } catch (err: any) {
     handleError(res, err);
