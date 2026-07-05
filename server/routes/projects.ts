@@ -148,6 +148,8 @@ const PROJECT_SAFE_COLUMNS = {
   updatedAt: projects.updatedAt,
   hasGoogleKey: sql<boolean>`(${projects.googleServiceAccountKeyEnc} is not null)`,
   hasTelegramToken: sql<boolean>`(${projects.telegramBotTokenEnc} is not null)`,
+  driveOAuthClientId: projects.driveOAuthClientId,
+  driveOAuthConnected: sql<boolean>`(${projects.driveOAuthRefreshTokenEnc} is not null)`,
 };
 
 router.get("/:id", requireAuth, requireProjectReadAccess, async (req: Request, res: Response) => {
@@ -233,7 +235,8 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
     const plainFields = ["name", "description", "formTitle", "formSubtitle", "invitationCode",
       "editTokenHours", "formEnabled", "formDisabledMessage", "steps",
       "googleSheetId", "importSheetId", "googleSheetName", "googleServiceAccountEmail",
-      "googleDriveFolderId", "driveRootFolderId", "telegramChatId"];
+      "googleDriveFolderId", "driveRootFolderId", "telegramChatId",
+      "driveOAuthClientId"];
 
     for (const field of plainFields) {
       if (field in body) update[field] = body[field];
@@ -253,6 +256,7 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
 
     if (body.googleServiceAccountKey) update.googleServiceAccountKeyEnc = encrypt(body.googleServiceAccountKey);
     if (body.telegramBotToken) update.telegramBotTokenEnc = encrypt(body.telegramBotToken);
+    if (body.driveOAuthClientSecret) update.driveOAuthClientSecretEnc = encrypt(body.driveOAuthClientSecret);
 
     await db.update(projects).set(update).where(eq(projects.id, String(req.params.id)));
     res.json({ ok: true });

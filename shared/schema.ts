@@ -79,6 +79,10 @@ export const projects = pgTable("projects", {
   // Google Drive sync (file upload integration)
   driveSyncEnabled: boolean("drive_sync_enabled").default(false),
   driveRootFolderId: text("drive_root_folder_id"),
+  // Google Drive OAuth2 (for personal Gmail — alternative to Service Account)
+  driveOAuthClientId: text("drive_oauth_client_id"),
+  driveOAuthClientSecretEnc: text("drive_oauth_client_secret_enc"),
+  driveOAuthRefreshTokenEnc: text("drive_oauth_refresh_token_enc"),
   // Telegram
   telegramBotTokenEnc: text("telegram_bot_token_enc"),
   telegramChatId: text("telegram_chat_id"),

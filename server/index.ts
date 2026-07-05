@@ -12,6 +12,7 @@ import { pool } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import projectsRoutes from "./routes/projects.js";
 import pformRoutes from "./routes/pform.js";
+import driveOAuthRoutes from "./routes/driveOAuth.js";
 import { uploadsDir } from "./middleware/upload.js";
 import { requireAuth, requirePasswordNotExpired } from "./middleware/auth.js";
 import { db } from "./db.js";
@@ -186,6 +187,7 @@ app.get("/uploads/*", async (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api", driveOAuthRoutes);
 // H-03: Block all project API access if mustChangePassword is set
 app.use("/api/projects", requireAuth, requirePasswordNotExpired, projectsRoutes);
 app.use("/api/pform", pformRoutes);
@@ -337,6 +339,9 @@ async function initDB() {
       ALTER TABLE project_fields ADD COLUMN IF NOT EXISTS allowed_file_types JSONB;
       ALTER TABLE project_fields ADD COLUMN IF NOT EXISTS max_file_size_mb INTEGER;
       ALTER TABLE project_fields ADD COLUMN IF NOT EXISTS is_full_width BOOLEAN DEFAULT FALSE;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_client_id TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_client_secret_enc TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_refresh_token_enc TEXT;
     `);
     // Migrate legacy single-condition columns (if present) into the new conditions[] array, then drop them
     const legacyColCheck = await pool.query(`

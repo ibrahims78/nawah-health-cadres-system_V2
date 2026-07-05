@@ -7,13 +7,31 @@ import { eq } from "drizzle-orm";
 import { decrypt } from "./crypto.js";
 import { uploadsDir } from "../middleware/upload.js";
 
-// ── Drive client initialisation from project service account ───────────────
+// ── Drive client initialisation ────────────────────────────────────────────
 
+/**
+ * Returns a Drive client + project record.
+ * Priority:
+ *   1. OAuth2 with user's personal Google account (refresh token stored per-project)
+ *   2. Service Account (legacy / Workspace setups)
+ */
 async function getDriveClient(projectId: string) {
   const [proj] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!proj) throw new Error("المشروع غير موجود");
+
+  // ── Option 1: OAuth2 (works with personal Gmail) ──────────────────────────
+  if (proj.driveOAuthRefreshTokenEnc && proj.driveOAuthClientId && proj.driveOAuthClientSecretEnc) {
+    const clientSecret = decrypt(proj.driveOAuthClientSecretEnc);
+    const refreshToken = decrypt(proj.driveOAuthRefreshTokenEnc);
+    const oauth2Client = new google.auth.OAuth2(proj.driveOAuthClientId, clientSecret);
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+    return { drive, proj };
+  }
+
+  // ── Option 2: Service Account ──────────────────────────────────────────────
   if (!proj.googleServiceAccountKeyEnc || !proj.googleServiceAccountEmail) {
-    throw new Error("لم يتم إعداد Google Service Account لهذا المشروع");
+    throw new Error("لم يتم إعداد Google Drive. فعّل OAuth2 أو أضف Service Account.");
   }
 
   const keyJson = decrypt(proj.googleServiceAccountKeyEnc);

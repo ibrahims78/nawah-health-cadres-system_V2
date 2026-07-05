@@ -55,6 +55,11 @@ export function ProjectSettings() {
   const [driveResult, setDriveResult] = useState<{ synced: number; failed: number; failedRecords: any[]; message?: string } | null>(null);
   const [driveSyncing, setDriveSyncing] = useState(false);
   const [driveRootInput, setDriveRootInput] = useState("");
+  // Drive OAuth2 state
+  const [oauthClientId, setOauthClientId] = useState("");
+  const [oauthClientSecret, setOauthClientSecret] = useState("");
+  const [savingOAuth, setSavingOAuth] = useState(false);
+  const [disconnectingOAuth, setDisconnectingOAuth] = useState(false);
 
   // Expanded field for validation
   const [expandedFieldIdx, setExpandedFieldIdx] = useState<number | null>(null);
@@ -86,6 +91,23 @@ export function ProjectSettings() {
 
   useEffect(() => { setFields(rawFields); }, [rawFields]);
 
+  // Handle OAuth2 callback query params (?oauth=success|error)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthResult = params.get("oauth");
+    const tabParam = params.get("tab");
+    if (tabParam === "drive") setTab("drive");
+    if (oauthResult === "success") {
+      toast({ description: isAr ? "✅ تم ربط حساب Google بنجاح" : "✅ Google account connected successfully" });
+      qc.invalidateQueries({ queryKey: ["/api/projects", id] });
+      window.history.replaceState({}, "", window.location.pathname + "?tab=drive");
+    } else if (oauthResult === "error") {
+      const msg = params.get("msg") || "unknown";
+      toast({ variant: "destructive", description: `❌ ${isAr ? "فشل الربط" : "Connection failed"}: ${msg}` });
+      window.history.replaceState({}, "", window.location.pathname + "?tab=drive");
+    }
+  }, []);
+
   const { register, handleSubmit, reset, watch, setValue } = useForm<any>();
   useEffect(() => {
     if (project) {
@@ -101,8 +123,48 @@ export function ProjectSettings() {
         telegramChatId: project.telegramChatId,
       });
       setDriveRootInput(project.driveRootFolderId || project.googleDriveFolderId || "");
+      setOauthClientId(project.driveOAuthClientId || "");
     }
   }, [project, reset]);
+
+  // ── Drive OAuth2 helpers ────────────────────────────────────────────────────
+  const saveOAuthCredentials = async () => {
+    setSavingOAuth(true);
+    try {
+      const body: any = { driveOAuthClientId: oauthClientId };
+      if (oauthClientSecret) body.driveOAuthClientSecret = oauthClientSecret;
+      await apiRequest("PATCH", `/api/projects/${id}`, body);
+      qc.invalidateQueries({ queryKey: ["/api/projects", id] });
+      setOauthClientSecret("");
+      toast({ description: isAr ? "✅ تم حفظ بيانات OAuth" : "✅ OAuth credentials saved" });
+    } catch (err: any) {
+      toast({ variant: "destructive", description: `❌ ${err.message}` });
+    } finally {
+      setSavingOAuth(false);
+    }
+  };
+
+  const startOAuthFlow = async () => {
+    try {
+      const { authUrl } = await fetchJson(`/api/projects/${id}/drive-oauth/url`);
+      window.location.href = authUrl;
+    } catch (err: any) {
+      toast({ variant: "destructive", description: `❌ ${err.message}` });
+    }
+  };
+
+  const disconnectOAuth = async () => {
+    setDisconnectingOAuth(true);
+    try {
+      await apiRequest("DELETE", `/api/projects/${id}/drive-oauth/disconnect`);
+      qc.invalidateQueries({ queryKey: ["/api/projects", id] });
+      toast({ description: isAr ? "✅ تم قطع الربط مع Google" : "✅ Google account disconnected" });
+    } catch (err: any) {
+      toast({ variant: "destructive", description: `❌ ${err.message}` });
+    } finally {
+      setDisconnectingOAuth(false);
+    }
+  };
 
   const formEnabled = watch("formEnabled");
 
@@ -1042,7 +1104,91 @@ export function ProjectSettings() {
         {tab === "drive" && (
           <div className="space-y-4">
 
-            {/* Drive root folder config */}
+            {/* ── Step 1: OAuth2 Setup ── */}
+            <Card className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold">{isAr ? "ربط حساب Google (OAuth2)" : "Connect Google Account (OAuth2)"}</h3>
+                </div>
+                {project?.driveOAuthConnected
+                  ? <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 gap-1"><CheckCircle2 className="h-3 w-3" />{isAr ? "مرتبط" : "Connected"}</Badge>
+                  : <Badge variant="outline" className="text-muted-foreground gap-1"><XCircle className="h-3 w-3" />{isAr ? "غير مرتبط" : "Not connected"}</Badge>
+                }
+              </div>
+
+              {/* Redirect URI info box */}
+              <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  {isAr ? "أضف هذا الرابط في Google Cloud Console ← Authorized redirect URIs:" : "Add this URI in Google Cloud Console → Authorized redirect URIs:"}
+                </p>
+                <code className="text-xs font-mono text-amber-900 dark:text-amber-200 break-all select-all">
+                  {window.location.origin}/api/drive-oauth/callback
+                </code>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Client ID</Label>
+                  <Input
+                    value={oauthClientId}
+                    onChange={e => setOauthClientId(e.target.value)}
+                    placeholder="xxxxxxxx.apps.googleusercontent.com"
+                    className="font-mono text-xs"
+                    data-testid="input-oauth-client-id"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Client Secret {project?.driveOAuthConnected ? <span className="text-muted-foreground">{isAr ? "(محفوظ — أدخل قيمة جديدة للتغيير)" : "(saved — enter new value to change)"}</span> : ""}</Label>
+                  <Input
+                    type="password"
+                    value={oauthClientSecret}
+                    onChange={e => setOauthClientSecret(e.target.value)}
+                    placeholder={project?.driveOAuthConnected ? "••••••••" : "GOCSPX-..."}
+                    className="font-mono text-xs"
+                    data-testid="input-oauth-client-secret"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button" size="sm"
+                  onClick={saveOAuthCredentials}
+                  disabled={savingOAuth || !oauthClientId}
+                  data-testid="button-save-oauth"
+                >
+                  {savingOAuth ? <Loader2 className="h-3.5 w-3.5 animate-spin ml-1" /> : <Save className="h-3.5 w-3.5 ml-1" />}
+                  {isAr ? "حفظ البيانات" : "Save Credentials"}
+                </Button>
+                <Button
+                  type="button" size="sm" variant="outline"
+                  onClick={startOAuthFlow}
+                  disabled={!project?.driveOAuthClientId}
+                  className="gap-1.5"
+                  data-testid="button-connect-oauth"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {project?.driveOAuthConnected
+                    ? (isAr ? "إعادة الربط مع Google" : "Re-connect with Google")
+                    : (isAr ? "ربط مع Google" : "Connect with Google")}
+                </Button>
+                {project?.driveOAuthConnected && (
+                  <Button
+                    type="button" size="sm" variant="ghost"
+                    onClick={disconnectOAuth}
+                    disabled={disconnectingOAuth}
+                    className="text-red-500 hover:text-red-600 gap-1.5"
+                    data-testid="button-disconnect-oauth"
+                  >
+                    {disconnectingOAuth ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                    {isAr ? "قطع الربط" : "Disconnect"}
+                  </Button>
+                )}
+              </div>
+            </Card>
+
+            {/* ── Step 2: Drive Root Folder ── */}
             <Card className="p-5 space-y-3">
               <div className="flex items-center gap-2 mb-1">
                 <HardDrive className="h-4 w-4 text-primary" />
@@ -1050,8 +1196,8 @@ export function ProjectSettings() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {isAr
-                  ? "أدخل معرِّف مجلد Google Drive المشترك مع حساب الخدمة. ستُنشأ مجلدات المشروع والسجلات داخله تلقائياً عند المزامنة."
-                  : "Enter the Google Drive folder ID shared with the service account. Project and record folders will be created inside it automatically during sync."}
+                  ? "أدخل معرِّف مجلد Google Drive. ستُنشأ مجلدات المشروع والسجلات داخله تلقائياً عند المزامنة."
+                  : "Enter the Google Drive folder ID. Project and record sub-folders will be created inside it automatically during sync."}
               </p>
               <div className="flex gap-2">
                 <input
