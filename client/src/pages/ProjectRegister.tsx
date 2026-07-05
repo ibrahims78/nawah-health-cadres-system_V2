@@ -490,7 +490,7 @@ export function ProjectRegister() {
       );
     }
     return (
-    <div key={f.id} className={cn("space-y-1.5", (f.fieldType === "textarea" || f.fieldType === "file" || f.fieldType === "checkbox") ? "col-span-2" : "")}>
+    <div key={f.id} className={cn("space-y-1.5", ((f as any).isFullWidth || f.fieldType === "textarea" || f.fieldType === "file" || f.fieldType === "checkbox") ? "col-span-2" : "")}>
       <Label className="text-sm font-medium text-slate-700 dark:text-slate-200">
         {f.label}
         {f.isRequired && <span className="text-red-500 mr-1">*</span>}

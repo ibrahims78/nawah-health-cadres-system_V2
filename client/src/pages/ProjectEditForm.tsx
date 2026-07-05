@@ -117,7 +117,7 @@ export function ProjectEditForm() {
                     );
                   }
                   return (
-                  <div key={f.id} className={`space-y-1.5${(f.fieldType === "textarea" || f.fieldType === "file" || f.fieldType === "checkbox") ? " col-span-2" : ""}`}>
+                  <div key={f.id} className={`space-y-1.5${((f as any).isFullWidth || f.fieldType === "textarea" || f.fieldType === "file" || f.fieldType === "checkbox") ? " col-span-2" : ""}`}>
                     <Label className="text-sm font-medium">
                       {f.label}{f.isRequired && <span className="text-red-500 mr-1">*</span>}
                     </Label>

@@ -794,6 +794,13 @@ export function ProjectSettings() {
                                 <label htmlFor={`readonly-${idx}`} className="text-xs">{isAr ? "لا يمكن تعديله بعد الإنشاء" : "Cannot be edited after creation"}</label>
                               </div>
                             </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] text-muted-foreground">{isAr ? "عرض الحقل في النموذج" : "Field width in form"}</label>
+                              <div className="h-7 flex items-center gap-1.5">
+                                <input type="checkbox" checked={!!(f as any).isFullWidth} onChange={e => updateField(idx, { isFullWidth: e.target.checked } as any)} className="rounded" id={`fullwidth-${idx}`} data-testid={`field-fullwidth-${idx}`} />
+                                <label htmlFor={`fullwidth-${idx}`} className="text-xs">{isAr ? "عرض كامل (صف مستقل)" : "Full width (own row)"}</label>
+                              </div>
+                            </div>
                           </div>
                         </div>
 

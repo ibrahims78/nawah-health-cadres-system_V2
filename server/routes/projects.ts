@@ -435,6 +435,7 @@ router.post("/:id/fields", requireEditorOrAdmin, requireProjectOwnership, async 
         conditionOperator: f.conditionOperator === "OR" ? "OR" : "AND",
         visibleTo: ["admin", "editor"].includes(f.visibleTo) ? f.visibleTo : "all",
         isReadOnly: !!f.isReadOnly,
+        isFullWidth: !!f.isFullWidth,
         // Per-field file restrictions (null = use global defaults)
         allowedFileTypes: Array.isArray(f.allowedFileTypes) && f.allowedFileTypes.length > 0 ? f.allowedFileTypes : null,
         maxFileSizeMb: f.maxFileSizeMb ? Number(f.maxFileSizeMb) : null,
