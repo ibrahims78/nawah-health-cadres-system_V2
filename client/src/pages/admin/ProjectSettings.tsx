@@ -17,7 +17,10 @@ import {
   ChevronDown, ChevronUp, Eye, EyeOff, GitBranch, Settings2, FileUp,
   Upload, TableProperties, Wrench, RefreshCw, BotMessageSquare, ArrowUpToLine,
   History, User, Clock, FolderSync, HardDrive, AlertTriangle, CheckCircle2, XCircle,
+  UserPlus, Users2, ShieldCheck,
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
 import type { Project, ProjectField } from "@shared/schema";
 import { useLang } from "@/context/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +32,10 @@ export function ProjectSettings() {
   const { lang } = useLang();
   const isAr = lang === "ar";
   const { toast } = useToast();
-  const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram" | "audit" | "drive">("form");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram" | "audit" | "drive" | "collaborators">("form");
+  const [newCollabUserId, setNewCollabUserId] = useState<string>("");
   const [testing, setTesting] = useState(false);
   const [fields, setFields] = useState<ProjectField[]>([]);
   const [showGuide, setShowGuide] = useState(false);
@@ -78,6 +84,51 @@ export function ProjectSettings() {
     queryKey: ["/api/projects", id, "audit-log"],
     queryFn: () => fetchJson(`/api/projects/${id}/audit-log?limit=100`),
     enabled: tab === "audit",
+  });
+
+  // Collaborators tab data (admin only)
+  const { data: collaborators = [], refetch: refetchCollabs } = useQuery<any[]>({
+    queryKey: ["/api/projects", id, "collaborators"],
+    queryFn: () => fetchJson(`/api/projects/${id}/collaborators`),
+    enabled: tab === "collaborators" && isAdmin,
+  });
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects/users-list"],
+    queryFn: () => fetchJson("/api/projects/users-list"),
+    enabled: tab === "collaborators" && isAdmin,
+  });
+  // Editors not yet collaborators and not the project owner
+  const availableEditors = allUsers.filter(
+    (u: any) =>
+      u.role === "editor" &&
+      u.id !== (project as any)?.createdBy &&
+      !collaborators.some((c: any) => c.userId === u.id)
+  );
+
+  const addCollabMut = useMutation({
+    mutationFn: (userId: string) =>
+      fetch(`/api/projects/${id}/collaborators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      }).then(r => { if (!r.ok) throw new Error(); return r.json(); }),
+    onSuccess: () => {
+      setNewCollabUserId("");
+      qc.invalidateQueries({ queryKey: ["/api/projects", id, "collaborators"] });
+      toast({ description: isAr ? "✅ تم منح الوصول للمحرر" : "✅ Access granted" });
+    },
+    onError: () => toast({ variant: "destructive", description: isAr ? "فشل في منح الوصول" : "Failed to grant access" }),
+  });
+
+  const removeCollabMut = useMutation({
+    mutationFn: (userId: string) =>
+      fetch(`/api/projects/${id}/collaborators/${userId}`, { method: "DELETE" })
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/projects", id, "collaborators"] });
+      toast({ description: isAr ? "تم إلغاء الوصول" : "Access revoked" });
+    },
+    onError: () => toast({ variant: "destructive", description: isAr ? "فشل إلغاء الوصول" : "Failed to revoke access" }),
   });
 
   const { data: syncStats, refetch: refetchStats } = useQuery<{
@@ -316,14 +367,16 @@ export function ProjectSettings() {
     }
   };
 
-  const tabs = [
-    { key: "form",     label: isAr ? "النموذج" : "Form" },
-    { key: "fields",   label: isAr ? "الحقول" : "Fields" },
-    { key: "sheets",   label: "Google Sheets" },
-    { key: "telegram", label: "Telegram" },
-    { key: "drive",    label: isAr ? "مزامنة Drive" : "Drive Sync" },
-    { key: "audit",    label: isAr ? "سجل النشاط" : "Activity Log" },
-  ] as const;
+  type TabKey = "form" | "fields" | "sheets" | "telegram" | "drive" | "audit" | "collaborators";
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: "form",          label: isAr ? "النموذج" : "Form" },
+    { key: "fields",        label: isAr ? "الحقول" : "Fields" },
+    { key: "sheets",        label: "Google Sheets" },
+    { key: "telegram",      label: "Telegram" },
+    { key: "drive",         label: isAr ? "مزامنة Drive" : "Drive Sync" },
+    { key: "audit",         label: isAr ? "سجل النشاط" : "Activity Log" },
+    ...(isAdmin ? [{ key: "collaborators" as TabKey, label: isAr ? "المتعاونون" : "Collaborators" }] : []),
+  ];
 
   const ACTION_LABEL: Record<string, { ar: string; en: string; color: string }> = {
     create: { ar: "إنشاء", en: "Create", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
@@ -1365,6 +1418,96 @@ export function ProjectSettings() {
         )}
 
         {/* ══ AUDIT LOG TAB ══ */}
+        {/* ══ COLLABORATORS TAB ══ */}
+        {tab === "collaborators" && isAdmin && (
+          <div className="space-y-4">
+            <Card className="p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">
+                  {isAr ? "منح محرر وصولاً لهذا المشروع" : "Grant an editor access to this project"}
+                </h3>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isAr
+                  ? "يمكن للمدير منح أي محرر صلاحية العمل على هذا المشروع حتى لو لم يكن هو من أنشأه. لا يتغير صاحب المشروع."
+                  : "Admins can let any editor work on this project even if they didn't create it. Ownership doesn't change."}
+              </p>
+              <div className="flex gap-2">
+                <Select value={newCollabUserId} onValueChange={setNewCollabUserId}>
+                  <SelectTrigger className="flex-1 h-9 text-sm">
+                    <SelectValue placeholder={isAr ? "اختر محرراً..." : "Select an editor..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableEditors.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        {isAr ? "لا يوجد محررون متاحون" : "No editors available"}
+                      </div>
+                    ) : availableEditors.map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.fullName} — {u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  className="h-9 px-3 shrink-0"
+                  disabled={!newCollabUserId || addCollabMut.isPending}
+                  onClick={() => newCollabUserId && addCollabMut.mutate(newCollabUserId)}
+                >
+                  {addCollabMut.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <UserPlus className="h-3.5 w-3.5" />}
+                  <span className="mr-1">{isAr ? "منح وصول" : "Grant Access"}</span>
+                </Button>
+              </div>
+            </Card>
+
+            <Card className="p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users2 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">
+                  {isAr ? "المحررون الذين لديهم وصول" : "Editors with access"}
+                </h3>
+                {collaborators.length > 0 && (
+                  <span className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-medium">
+                    {collaborators.length}
+                  </span>
+                )}
+              </div>
+              {collaborators.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  {isAr ? "لم يُمنح أي محرر وصولاً لهذا المشروع بعد." : "No editors have been granted access yet."}
+                </p>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {collaborators.map((c: any) => (
+                    <div key={c.id} className="flex items-center gap-3 py-2.5">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{c.fullName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{c.email}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
+                        disabled={removeCollabMut.isPending}
+                        onClick={() => removeCollabMut.mutate(c.userId)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
         {tab === "audit" && (
           <div className="space-y-3">
             <Card className="p-4">

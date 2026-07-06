@@ -8,3 +8,4 @@
 - [Column type mismatch in joins](drizzle-join-type-mismatch.md) — `changed_by` (text) vs `users.id` (uuid) broke audit-log join with "operator does not exist"; check actual DB column types (psql \d), not just schema.ts, when a join/eq throws a type operator error
 - [Organised file uploads](organised-uploads.md) — uploads now stored at uploads/{slug}/{uploadFolder}/{uuid.ext}; deletion and serving must use full relative path, not path.basename()
 - [Drive OAuth2 implementation](drive-oauth2.md) — OAuth2 for personal Gmail Drive; CSRF nonce in session; Client ID change clears refresh token; updateProjectSchema must include driveOAuth* fields
+- [Collaborator access model](collaborator-access-model.md) — three guards (strict/broad/read); file serving checks collaborators; TabKey union to avoid TS widening on conditional spread

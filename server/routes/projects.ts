@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
-import { projects, projectFields, projectRecords, projectAuditLog, users, userInvitations, systemSettings, projectFieldSchema, createProjectSchema, updateProjectSchema, updateUserRoleSchema, globalSettingsSchema, createUserSchema, bulkDeleteSchema } from "../../shared/schema.js";
+import { projects, projectFields, projectRecords, projectAuditLog, users, userInvitations, systemSettings, projectCollaborators, projectFieldSchema, createProjectSchema, updateProjectSchema, updateUserRoleSchema, globalSettingsSchema, createUserSchema, bulkDeleteSchema } from "../../shared/schema.js";
 import { eq, desc, count, gte, and, ilike, or, gt, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/auth.js";
 import { encrypt, decrypt } from "../services/crypto.js";
@@ -24,9 +24,10 @@ const router = Router();
 const parseExcelLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, message: { error: "محاولات كثيرة — حاول لاحقاً" } });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ─── PROJECT OWNERSHIP GUARD ──────────────────────────────────
-// Editors may only write to projects they created; admins bypass this check.
-// Call after requireEditorOrAdmin — assumes session.userId and session.role are set.
+// ─── PROJECT ACCESS GUARDS ────────────────────────────────────
+
+/** STRICT — admin or project owner only. Used for irreversible/sensitive operations
+ *  (delete project, update project settings & integration credentials). */
 async function requireProjectOwnership(req: Request, res: Response, next: NextFunction): Promise<void> {
   const role = (req.session as any)?.role;
   if (role === "admin") { next(); return; }
@@ -42,8 +43,28 @@ async function requireProjectOwnership(req: Request, res: Response, next: NextFu
   }
 }
 
-// Read-only variant: admins & viewers may read any project; editors only their own.
-// Mirrors the visibility rule already used by GET "/" (project list).
+/** BROAD — admin, project owner, or granted collaborator.
+ *  Used for content operations: records, fields, uploads, exports, integration usage. */
+async function requireProjectEditAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const role = (req.session as any)?.role;
+  if (role === "admin") { next(); return; }
+  const userId = (req.session as any)?.userId;
+  const pid = String(req.params.id);
+  try {
+    const [proj] = await db.select({ createdBy: projects.createdBy }).from(projects).where(eq(projects.id, pid));
+    if (!proj) { res.status(404).json({ error: "المشروع غير موجود" }); return; }
+    if (proj.createdBy === userId) { next(); return; }
+    const [collab] = await db.select({ id: projectCollaborators.id })
+      .from(projectCollaborators)
+      .where(and(eq(projectCollaborators.projectId, pid), eq(projectCollaborators.userId, userId)));
+    if (collab) { next(); return; }
+    res.status(403).json({ error: "لا تملك صلاحية تعديل هذا المشروع" });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+}
+
+/** READ-ONLY — admin, viewer, project owner, or granted collaborator. */
 async function requireProjectReadAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   const role = (req.session as any)?.role;
   if (role === "admin" || role === "viewer") { next(); return; }
@@ -52,8 +73,12 @@ async function requireProjectReadAccess(req: Request, res: Response, next: NextF
   try {
     const [proj] = await db.select({ createdBy: projects.createdBy }).from(projects).where(eq(projects.id, pid));
     if (!proj) { res.status(404).json({ error: "المشروع غير موجود" }); return; }
-    if (proj.createdBy !== userId) { res.status(403).json({ error: "لا تملك صلاحية عرض هذا المشروع" }); return; }
-    next();
+    if (proj.createdBy === userId) { next(); return; }
+    const [collab] = await db.select({ id: projectCollaborators.id })
+      .from(projectCollaborators)
+      .where(and(eq(projectCollaborators.projectId, pid), eq(projectCollaborators.userId, userId)));
+    if (collab) { next(); return; }
+    res.status(403).json({ error: "لا تملك صلاحية عرض هذا المشروع" });
   } catch (err: any) {
     handleError(res, err);
   }
@@ -80,12 +105,21 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     const role = (req.session as any).role;
     const userId = (req.session as any).userId;
-    // admin & viewer → all projects; editor → only their own
-    const list = role === "editor"
-      ? await db.select(PROJECT_LIST_COLUMNS).from(projects)
-          .where(eq(projects.createdBy, userId))
-          .orderBy(desc(projects.createdAt))
-      : await db.select(PROJECT_LIST_COLUMNS).from(projects).orderBy(desc(projects.createdAt));
+    let list;
+    if (role === "editor") {
+      // Own projects + projects where this editor was granted collaborator access
+      list = await db
+        .select(PROJECT_LIST_COLUMNS)
+        .from(projects)
+        .leftJoin(
+          projectCollaborators,
+          and(eq(projectCollaborators.projectId, projects.id), eq(projectCollaborators.userId, userId))
+        )
+        .where(or(eq(projects.createdBy, userId), sql`${projectCollaborators.id} IS NOT NULL`))
+        .orderBy(desc(projects.createdAt));
+    } else {
+      list = await db.select(PROJECT_LIST_COLUMNS).from(projects).orderBy(desc(projects.createdAt));
+    }
     res.json(list);
   } catch (err: any) {
     handleError(res, err);
@@ -368,7 +402,7 @@ router.post("/parse-excel", requireEditorOrAdmin, parseExcelLimiter, upload.sing
 
 // M-04: validateMimeType checks magic-bytes; validateFieldRestrictions enforces per-field limits.
 // After validation passes, file is moved from flat uploads/ into uploads/{project-slug}/{upload-folder}/
-router.post("/:id/upload", requireEditorOrAdmin, requireProjectOwnership, (req: Request, res: Response, next: NextFunction) => {
+router.post("/:id/upload", requireEditorOrAdmin, requireProjectEditAccess, (req: Request, res: Response, next: NextFunction) => {
   const pid = String(req.params.id);
   fileUpload.single("file")(req, res, async (err: any) => {
     if (err) return res.status(400).json({ error: err.message || "فشل رفع الملف" });
@@ -421,7 +455,7 @@ router.get("/:id/fields", requireAuth, requireProjectReadAccess, async (req: Req
   }
 });
 
-router.post("/:id/fields", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/fields", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const rawFields: any[] = req.body.fields;
     if (!Array.isArray(rawFields)) return res.status(400).json({ error: "fields must be an array" });
@@ -519,7 +553,7 @@ router.get("/:id/records", requireAuth, requireProjectReadAccess, async (req: Re
   }
 });
 
-router.post("/:id/records", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/records", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const [proj] = await db.select({ editTokenHours: projects.editTokenHours }).from(projects).where(eq(projects.id, pid));
@@ -572,7 +606,7 @@ router.get("/:id/records/:recordId", requireAuth, requireProjectReadAccess, asyn
   }
 });
 
-router.patch("/:id/records/:recordId", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.patch("/:id/records/:recordId", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const [existing] = await db.select().from(projectRecords)
@@ -621,7 +655,7 @@ router.patch("/:id/records/:recordId", requireEditorOrAdmin, requireProjectOwner
   }
 });
 
-router.delete("/:id/records/:recordId", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.delete("/:id/records/:recordId", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const rid = String(req.params.recordId);
@@ -681,7 +715,7 @@ router.delete("/:id/records/:recordId", requireEditorOrAdmin, requireProjectOwne
   }
 });
 
-router.post("/:id/records/bulk-delete", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/records/bulk-delete", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const parsed = bulkDeleteSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0].message }); return; }
@@ -949,35 +983,35 @@ router.get("/:id/stats/distributions", requireAuth, requireProjectReadAccess, as
 
 // ─── SHEET TOOLS ─────────────────────────────────────────────
 
-router.post("/:id/fix-sheet-headers", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/fix-sheet-headers", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   const result = await fixProjectSheetHeaders(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/check-sheet-columns", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/check-sheet-columns", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   const result = await checkProjectSheetColumns(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/import-from-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/import-from-sheets", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   const { syncDeleted, dryRun } = req.body;
   const result = await importFromProjectSheet(String(req.params.id), !!syncDeleted, !!dryRun);
   res.json(result);
 });
 
-router.post("/:id/export-to-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/export-to-sheets", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   const result = await exportToProjectSheet(String(req.params.id));
   res.json(result);
 });
 
 // ─── SETTINGS ACTIONS ────────────────────────────────────────
 
-router.post("/:id/test-sheets", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/test-sheets", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   const result = await testProjectSheetsConnection(String(req.params.id));
   res.json(result);
 });
 
-router.post("/:id/test-telegram", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/test-telegram", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const { token, chatId } = req.body;
     let botToken = token;
@@ -993,7 +1027,7 @@ router.post("/:id/test-telegram", requireEditorOrAdmin, requireProjectOwnership,
   }
 });
 
-router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     let botToken = token;
@@ -1128,7 +1162,7 @@ router.get("/:id/audit-log", requireAuth, requireProjectReadAccess, async (req: 
 
 // ─── DRIVE SYNC ──────────────────────────────────────────────
 
-router.get("/:id/sync-stats", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.get("/:id/sync-stats", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const allRecords = await db.select({
@@ -1166,7 +1200,7 @@ router.get("/:id/sync-stats", requireEditorOrAdmin, requireProjectOwnership, asy
   }
 });
 
-router.post("/:id/sync-drive", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/sync-drive", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const mode: "keep_local" | "delete_local" = req.body.mode || "keep_local";
@@ -1317,7 +1351,7 @@ router.post("/:id/sync-drive", requireEditorOrAdmin, requireProjectOwnership, as
 
 // ─── PER-RECORD DRIVE SYNC ───────────────────────────────────
 
-router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const rid = String(req.params.recordId);
@@ -1403,6 +1437,73 @@ router.post("/:id/records/:recordId/sync-drive", requireEditorOrAdmin, requirePr
       .set({ syncStatus: "sync_failed" } as any)
       .where(eq(projectRecords.id, String(req.params.recordId)))
       .catch(() => {});
+    handleError(res, err);
+  }
+});
+
+// ─── COLLABORATORS (admin only) ──────────────────────────────────────────────
+
+// GET /:id/collaborators — list editors who have been granted access
+router.get("/:id/collaborators", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.id);
+    const list = await db
+      .select({
+        id: projectCollaborators.id,
+        userId: projectCollaborators.userId,
+        fullName: users.fullName,
+        email: users.email,
+        grantedBy: projectCollaborators.grantedBy,
+        createdAt: projectCollaborators.createdAt,
+      })
+      .from(projectCollaborators)
+      .innerJoin(users, eq(users.id, projectCollaborators.userId))
+      .where(eq(projectCollaborators.projectId, pid));
+    res.json(list);
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
+// POST /:id/collaborators — grant an editor access to this project
+router.post("/:id/collaborators", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.id);
+    const { userId } = req.body;
+    if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId مطلوب" });
+
+    // Must be an editor
+    const [target] = await db.select({ role: users.role, fullName: users.fullName, email: users.email })
+      .from(users).where(eq(users.id, userId));
+    if (!target) return res.status(404).json({ error: "المستخدم غير موجود" });
+    if (target.role !== "editor") return res.status(400).json({ error: "يمكن منح الوصول للمحررين فقط" });
+
+    // Must not already be the project owner
+    const [proj] = await db.select({ createdBy: projects.createdBy }).from(projects).where(eq(projects.id, pid));
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+    if (proj.createdBy === userId) return res.status(400).json({ error: "هذا المستخدم هو صاحب المشروع بالفعل" });
+
+    await db.insert(projectCollaborators).values({
+      projectId: pid,
+      userId,
+      grantedBy: (req.session as any).userId,
+    }).onConflictDoNothing();
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
+// DELETE /:id/collaborators/:userId — revoke access
+router.delete("/:id/collaborators/:userId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.id);
+    const uid = String(req.params.userId);
+    await db.delete(projectCollaborators)
+      .where(and(eq(projectCollaborators.projectId, pid), eq(projectCollaborators.userId, uid)));
+    res.json({ ok: true });
+  } catch (err: any) {
     handleError(res, err);
   }
 });

@@ -10,7 +10,7 @@ import { useProject } from "@/context/ProjectContext";
 import {
   Plus, FolderKanban, Users, Settings, Trash2, LayoutDashboard,
   ExternalLink, Loader2, Search, Copy, Check, Download,
-  SortAsc, ArrowUpDown, Clock, AlignLeft,
+  SortAsc, ArrowUpDown, Clock, AlignLeft, Users2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
@@ -256,8 +256,14 @@ export function Projects() {
                       <span className="text-white font-bold text-sm">{p.name[0]}</span>
                     </div>
 
-                    {/* Status badge */}
-                    <div className="mr-auto">
+                    {/* Status badges */}
+                    <div className="mr-auto flex items-center gap-1.5">
+                      {user?.role === "editor" && (p as any).createdBy !== user?.id && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm border bg-amber-400/20 border-amber-300/40 text-amber-100 flex items-center gap-1">
+                          <Users2 className="h-2.5 w-2.5" />
+                          {ar ? "مشارك" : "Shared"}
+                        </span>
+                      )}
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm border ${
                         p.formEnabled
                           ? "bg-green-500/20 border-green-300/40 text-green-100"

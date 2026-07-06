@@ -275,6 +275,17 @@ export const globalSettingsSchema = z.object({
   smtpFromName: z.string().optional(),
 });
 
+// ============================================================
+// PROJECT COLLABORATORS  (admin grants editor access to non-owned projects)
+// ============================================================
+export const projectCollaborators = pgTable("project_collaborators", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: uuid("granted_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const verifyCodeSchema = z.object({
   code: z.string().min(1, "رمز الدعوة مطلوب").max(200, "الرمز طويل جداً"),
 });

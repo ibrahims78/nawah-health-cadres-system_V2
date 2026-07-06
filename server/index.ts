@@ -16,7 +16,7 @@ import driveOAuthRoutes from "./routes/driveOAuth.js";
 import { uploadsDir } from "./middleware/upload.js";
 import { requireAuth, requirePasswordNotExpired } from "./middleware/auth.js";
 import { db } from "./db.js";
-import { projectRecords, projects } from "../shared/schema.js";
+import { projectRecords, projects, projectCollaborators } from "../shared/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 
 dotenv.config();
@@ -157,8 +157,7 @@ app.get("/uploads/*", async (req, res) => {
       return res.status(500).json({ error: "خطأ في التحقق" });
     }
   } else if (sessionRole !== "admin" && sessionRole !== "viewer") {
-    // Editors: only allow access to files that belong to a record in a project they created.
-    // The UUID leaf filename is globally unique, so the ILIKE check is sufficient.
+    // Editors: allow access to files in records of projects they own OR are collaborators on.
     try {
       const [owned] = await db
         .select({ id: projectRecords.id })
@@ -169,8 +168,23 @@ app.get("/uploads/*", async (req, res) => {
           sql`${projectRecords.data}::text ILIKE ${"%" + filename + "%"}`,
         ))
         .limit(1);
-      if (!owned) {
-        return res.status(403).json({ error: "لا تملك صلاحية الوصول لهذا الملف" });
+      if (owned) {
+        // file belongs to a project they own — allow
+      } else {
+        // Check if editor is a collaborator on the project containing this file
+        const [collabOwned] = await db
+          .select({ id: projectRecords.id })
+          .from(projectRecords)
+          .innerJoin(projects, eq(projects.id, projectRecords.projectId))
+          .innerJoin(projectCollaborators, and(
+            eq(projectCollaborators.projectId, projects.id),
+            eq(projectCollaborators.userId, sessionUserId),
+          ))
+          .where(sql`${projectRecords.data}::text ILIKE ${"%" + filename + "%"}`)
+          .limit(1);
+        if (!collabOwned) {
+          return res.status(403).json({ error: "لا تملك صلاحية الوصول لهذا الملف" });
+        }
       }
     } catch {
       return res.status(500).json({ error: "خطأ في التحقق" });
@@ -321,6 +335,18 @@ async function initDB() {
         action TEXT NOT NULL,
         changed_at TIMESTAMP DEFAULT NOW(),
         changes_json JSONB
+      );
+    `);
+
+    // Project collaborators table (admin grants editors access to non-owned projects)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_collaborators (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        granted_by UUID REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(project_id, user_id)
       );
     `);
 
