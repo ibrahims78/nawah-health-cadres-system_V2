@@ -12,9 +12,21 @@ import { db } from "../db.js";
 import { projects } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
 import { decrypt, encrypt } from "../services/crypto.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireEditorOrAdmin } from "../middleware/auth.js";
 
 const router = express.Router();
+
+/** Ensure the calling user owns the project or is an admin. */
+async function requireDriveProjectAccess(req: Request, res: Response, next: Function) {
+  const pid = String(req.params.id);
+  const sess = req.session as any;
+  const role = sess?.role;
+  if (role === "admin") return next();
+  const [proj] = await db.select({ createdBy: projects.createdBy }).from(projects).where(eq(projects.id, pid));
+  if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+  if (proj.createdBy !== sess?.userId) return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا المشروع" });
+  return next();
+}
 
 /** Redirect URI — must be registered verbatim in Google Cloud Console. */
 export function getRedirectUri(): string {
@@ -26,7 +38,7 @@ export function getRedirectUri(): string {
 }
 
 // ── Generate authorization URL ────────────────────────────────────────────────
-router.get("/projects/:id/drive-oauth/url", requireAuth, async (req: Request, res: Response) => {
+router.get("/projects/:id/drive-oauth/url", requireEditorOrAdmin, requireDriveProjectAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     const sess = req.session as any;
@@ -131,7 +143,7 @@ router.get("/drive-oauth/callback", async (req: Request, res: Response) => {
 });
 
 // ── Disconnect ────────────────────────────────────────────────────────────────
-router.delete("/projects/:id/drive-oauth/disconnect", requireAuth, async (req: Request, res: Response) => {
+router.delete("/projects/:id/drive-oauth/disconnect", requireEditorOrAdmin, requireDriveProjectAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
     await db.update(projects).set({ driveOAuthRefreshTokenEnc: null }).where(eq(projects.id, pid));

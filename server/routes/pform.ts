@@ -22,9 +22,15 @@ router.post("/:projectId/upload", uploadLimiter, async (req: Request, res: Respo
     name: projects.name,
     formEnabled: projects.formEnabled,
     formDisabledMessage: projects.formDisabledMessage,
+    invitationCode: projects.invitationCode,
   }).from(projects).where(eq(projects.id, pid));
   if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
   if (!proj.formEnabled) return res.status(403).json({ error: proj.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+  // Gate upload behind invitation-code verification (same check as submit)
+  const needsCode = !!(proj.invitationCode?.trim());
+  if (needsCode && !(req.session as any)[`code_${pid}`]) {
+    return res.status(401).json({ error: "يجب التحقق من رمز الدعوة أولاً" });
+  }
 
   fileUpload.single("file")(req, res, async (err: any) => {
     if (err) return res.status(400).json({ error: err.message || "فشل رفع الملف" });
