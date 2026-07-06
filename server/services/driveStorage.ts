@@ -93,16 +93,47 @@ async function findOrCreateFolder(
 
 /**
  * Ensure the project folder exists inside the root Drive folder.
- * Returns the folder ID (and stores it in projects.googleDriveFolderId).
+ *
+ * Resolution order (prevents duplicate folder creation):
+ *   1. If googleDriveFolderId is stored in DB → verify it still exists in Drive.
+ *      If it does, return it immediately (no search, no create).
+ *   2. If the stored ID is missing or was deleted → search by folder name inside rootFolderId.
+ *      If found, persist the discovered ID to DB and return it.
+ *   3. If no matching folder found at all → create one, persist its ID, return it.
  */
 export async function ensureProjectFolder(
   projectId: string,
   projectName: string,
   rootFolderId: string
 ): Promise<string> {
-  const { drive } = await getDriveClient(projectId);
-  const folderId = await findOrCreateFolder(drive, `مشروع: ${projectName}`, rootFolderId);
-  await db.update(projects).set({ googleDriveFolderId: folderId } as any).where(eq(projects.id, projectId));
+  const { drive, proj } = await getDriveClient(projectId);
+  const folderName = `مشروع: ${projectName}`;
+
+  // ── Step 1: validate the stored ID ─────────────────────────────────────────
+  if (proj.googleDriveFolderId) {
+    try {
+      const check = await drive.files.get({
+        fileId: proj.googleDriveFolderId,
+        fields: "id, trashed",
+        supportsAllDrives: true,
+      });
+      if (check.data.id && !check.data.trashed) {
+        // Folder confirmed alive — return it without touching Drive further.
+        return proj.googleDriveFolderId;
+      }
+    } catch {
+      // 404 or permission error → stored ID is stale; fall through to search/create.
+    }
+  }
+
+  // ── Step 2 + 3: search by name, then create if absent ──────────────────────
+  const folderId = await findOrCreateFolder(drive, folderName, rootFolderId);
+
+  // Persist the resolved ID so future calls take the fast path (Step 1).
+  await db.update(projects)
+    .set({ googleDriveFolderId: folderId } as any)
+    .where(eq(projects.id, projectId));
+
   return folderId;
 }
 
