@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, TrendingUp, Calendar, Clock, Plus, ExternalLink,
-  Settings, Download, BarChart2, PieChart as PieIcon, ArrowUpRight,
+  Settings, Download, BarChart2, PieChart as PieIcon, ArrowUpRight, UserCheck,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -52,6 +52,13 @@ export function ProjectDashboard() {
     queryKey: ["/api/projects", id, "stats", "distributions"],
     queryFn: () => fetch(`/api/projects/${id}/stats/distributions`, { credentials: "include" }).then(r => r.json()),
     staleTime: 60_000,
+  });
+
+  const { data: pStats } = useQuery<{ total: number; unopened: number; submitted: number; withTelegram: number }>({
+    queryKey: ["/api/projects", id, "participants", "stats"],
+    queryFn: () => fetch(`/api/projects/${id}/participants/stats`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!(project as any)?.participantsEnabled,
+    staleTime: 30_000,
   });
 
   const statCards = [
@@ -196,6 +203,46 @@ export function ProjectDashboard() {
                 </Card>
               ))}
         </div>
+
+        {/* ─── Participants mini-card ─── */}
+        {(project as any)?.participantsEnabled && pStats && (
+          <Card
+            className="p-5 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all duration-200 group"
+            onClick={() => nav(`/admin/projects/${id}/participants`)}
+            data-testid="card-participants"
+          >
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/20">
+                  <UserCheck className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-700 dark:text-slate-200">{isAr ? "تتبع المشاركين" : "Participant Tracking"}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{isAr ? "روابط شخصية لكل مشارك" : "Personal links per participant"}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{pStats.total}</div>
+                  <div className="text-[10px] text-muted-foreground">{isAr ? "إجمالي" : "Total"}</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-red-500">{pStats.unopened}</div>
+                  <div className="text-[10px] text-muted-foreground">{isAr ? "لم يُفتح" : "Unopened"}</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-green-600">{pStats.submitted}</div>
+                  <div className="text-[10px] text-muted-foreground">{isAr ? "مُسجَّل" : "Submitted"}</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-violet-600">{pStats.withTelegram}</div>
+                  <div className="text-[10px] text-muted-foreground">Telegram</div>
+                </div>
+                <ArrowUpRight className="h-5 w-5 text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* ─── Trend chart ─── */}
         {stats?.dailyTrend && stats.dailyTrend.length > 0 && (

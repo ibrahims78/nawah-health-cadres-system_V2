@@ -16,7 +16,6 @@ export async function testTelegramBot(
     const data = (await response.json()) as any;
     if (data.ok) return { ok: true, message: "✅ تم الاتصال وإرسال الرسالة بنجاح" };
 
-    // Translate common Telegram errors to Arabic
     const desc: string = data.description || "";
     let hint = desc;
     if (desc.includes("chat not found"))
@@ -42,7 +41,6 @@ export async function getTelegramUpdates(
 ): Promise<{ ok: boolean; chats?: Array<{ id: string; title: string; type: string }>; message?: string }> {
   const base = `https://api.telegram.org/bot${token}`;
   try {
-    // If a webhook is active, getUpdates will fail — delete it first silently
     await fetch(`${base}/deleteWebhook`, { method: "POST" }).catch(() => {});
 
     const response = await fetch(`${base}/getUpdates?limit=50&offset=-50`);
@@ -54,7 +52,6 @@ export async function getTelegramUpdates(
       return { ok: false, message: `❌ ${hint}` };
     }
 
-    // Extract unique chats from updates
     const seen = new Set<string>();
     const chats: Array<{ id: string; title: string; type: string }> = [];
 
@@ -79,4 +76,65 @@ export async function getTelegramUpdates(
   } catch (err: any) {
     return { ok: false, message: `❌ ${err.message}` };
   }
+}
+
+/** إرسال إشعار نصي لمشارك عبر chat_id */
+export async function notifyParticipant(
+  botToken: string,
+  chatId: string,
+  text: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    const data = (await res.json()) as any;
+    if (data.ok) return { ok: true };
+    return { ok: false, message: data.description || "فشل الإرسال" };
+  } catch (err: any) {
+    return { ok: false, message: err.message };
+  }
+}
+
+/** جلب username البوت عبر getMe */
+export async function getBotUsername(botToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const data = (await res.json()) as any;
+    if (data.ok && data.result?.username) return data.result.username as string;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** تسجيل Webhook للبوت — يُستدعى عند تفعيل ميزة المشاركين */
+export async function setWebhook(
+  botToken: string,
+  webhookUrl: string,
+  secret: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        secret_token: secret,
+        allowed_updates: ["message"],
+      }),
+    });
+    const data = (await res.json()) as any;
+    if (data.ok) return { ok: true };
+    return { ok: false, message: data.description || "فشل تسجيل الـ Webhook" };
+  } catch (err: any) {
+    return { ok: false, message: err.message };
+  }
+}
+
+/** حذف Webhook للبوت */
+export async function deleteWebhook(botToken: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`, { method: "POST" }).catch(() => {});
 }

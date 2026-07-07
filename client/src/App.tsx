@@ -25,6 +25,8 @@ import { ProjectSettings } from "@/pages/admin/ProjectSettings";
 import { GlobalSettings } from "@/pages/admin/GlobalSettings";
 import { ProjectRegister } from "@/pages/ProjectRegister";
 import { ProjectEditForm } from "@/pages/ProjectEditForm";
+import { ProjectParticipantForm } from "@/pages/ProjectParticipantForm";
+import { ProjectParticipants } from "@/pages/admin/ProjectParticipants";
 import { Toaster } from "@/components/ui/toaster";
 
 const ROLE_LEVEL: Record<string, number> = { viewer: 1, editor: 2, admin: 3 };
@@ -78,6 +80,7 @@ function AppRoutes() {
         {/* Public project forms */}
         <Route path="/p/:projectId/register" component={ProjectRegister} />
         <Route path="/p/:projectId/edit/:token" component={ProjectEditForm} />
+        <Route path="/p/:projectId/p/:token" component={ProjectParticipantForm} />
 
         {/* Admin — Projects list */}
         <Route path="/admin/projects">
@@ -111,6 +114,9 @@ function AppRoutes() {
         </Route>
         <Route path="/admin/projects/:id/settings">
           <ProtectedRoute minRole="editor"><ProjectSettings /></ProtectedRoute>
+        </Route>
+        <Route path="/admin/projects/:id/participants">
+          <ProtectedRoute minRole="editor"><ProjectParticipants /></ProtectedRoute>
         </Route>
 
         {/* Global settings */}

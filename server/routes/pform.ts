@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db.js";
-import { projects, projectFields, projectRecords, projectAuditLog, projectFormDrafts, verifyCodeSchema, submitFormSchema } from "../../shared/schema.js";
+import { projects, projectFields, projectRecords, projectAuditLog, projectFormDrafts, projectParticipants, verifyCodeSchema, submitFormSchema } from "../../shared/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { appendRecordToSheet, updateRecordRow } from "../services/projectSheets.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
@@ -373,6 +373,305 @@ router.delete("/:projectId/draft/:draftId", async (req: Request, res: Response) 
     res.json({ ok: true });
   } catch (err: any) {
     handleError(res, err);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// PARTICIPANT TOKEN ROUTES
+// ═══════════════════════════════════════════════════════════
+
+// GET participant form info via personal token
+router.get("/:projectId/p/:token", async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.projectId);
+    const token = String(req.params.token);
+
+    const [proj] = await db.select({
+      id: projects.id,
+      name: projects.name,
+      formTitle: projects.formTitle,
+      formSubtitle: projects.formSubtitle,
+      formEnabled: projects.formEnabled,
+      formDisabledMessage: projects.formDisabledMessage,
+      steps: projects.steps,
+      participantsEnabled: projects.participantsEnabled,
+      participantAllowOpen: projects.participantAllowOpen,
+      participantEditHours: projects.participantEditHours,
+      telegramBotTokenEnc: projects.telegramBotTokenEnc,
+    }).from(projects).where(eq(projects.id, pid));
+
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+    if (!proj.formEnabled) return res.status(403).json({ error: proj.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+
+    const [participant] = await db.select().from(projectParticipants)
+      .where(and(eq(projectParticipants.token, token as any), eq(projectParticipants.projectId, pid)));
+
+    if (!participant) {
+      // Token not found — check if open form is allowed
+      if (!proj.participantAllowOpen) {
+        return res.status(403).json({ error: "هذا النموذج مخصص للمدعوين فقط" });
+      }
+      // Open registration — return regular form without participant features
+      const fields = await db.select().from(projectFields)
+        .where(and(eq(projectFields.projectId, pid), eq(projectFields.isVisible, true)))
+        .orderBy(projectFields.stepNumber, projectFields.orderIndex);
+      return res.json({ project: { id: proj.id, name: proj.name, formTitle: proj.formTitle, formSubtitle: proj.formSubtitle, steps: proj.steps }, fields, participant: null, canSubmit: true, canEdit: false });
+    }
+
+    // Set firstOpenedAt on first visit
+    if (!participant.firstOpenedAt) {
+      await db.update(projectParticipants)
+        .set({ firstOpenedAt: new Date() })
+        .where(eq(projectParticipants.id, participant.id));
+    }
+
+    const editHours = proj.participantEditHours ?? 48;
+    const now = new Date();
+    const editDeadline = participant.submittedAt
+      ? new Date(participant.submittedAt.getTime() + editHours * 60 * 60 * 1000)
+      : null;
+
+    const canSubmit = !participant.submittedAt;
+    const canEdit = !!participant.submittedAt && editDeadline !== null && now < editDeadline;
+
+    if (participant.submittedAt && !canEdit) {
+      // Locked — show thank-you only (no form data)
+      return res.json({
+        project: { id: proj.id, name: proj.name, formTitle: proj.formTitle, formSubtitle: proj.formSubtitle, steps: proj.steps },
+        fields: [],
+        participant: { id: participant.id, name: participant.name, telegramChatId: participant.telegramChatId },
+        canSubmit: false,
+        canEdit: false,
+        locked: true,
+      });
+    }
+
+    const fields = await db.select().from(projectFields)
+      .where(and(eq(projectFields.projectId, pid), eq(projectFields.isVisible, true)))
+      .orderBy(projectFields.stepNumber, projectFields.orderIndex);
+
+    // Determine bot username for activation link
+    let botUsername: string | null = null;
+    if (proj.telegramBotTokenEnc && !participant.telegramChatId) {
+      try {
+        const botTok = decrypt(proj.telegramBotTokenEnc);
+        if (botTok) {
+          const r = await fetch(`https://api.telegram.org/bot${botTok}/getMe`);
+          const d = await r.json() as any;
+          if (d.ok && d.result?.username) botUsername = d.result.username;
+        }
+      } catch { /* non-blocking */ }
+    }
+
+    // Prefill: if submitted + in edit window → use actual record data; else use prefill_data
+    let prefillData: Record<string, any> = (participant.prefillData as any) || {};
+    if (canEdit && participant.recordId) {
+      const [rec] = await db.select({ data: projectRecords.data }).from(projectRecords)
+        .where(eq(projectRecords.id, participant.recordId));
+      if (rec?.data) prefillData = rec.data as any;
+    }
+
+    res.json({
+      project: { id: proj.id, name: proj.name, formTitle: proj.formTitle, formSubtitle: proj.formSubtitle, steps: proj.steps },
+      fields,
+      participant: { id: participant.id, name: participant.name, token: participant.token, telegramChatId: participant.telegramChatId },
+      prefillData,
+      canSubmit,
+      canEdit,
+      botUsername,
+      editDeadline: editDeadline?.toISOString() ?? null,
+    });
+  } catch (err: any) { handleError(res, err); }
+});
+
+// POST submit participant form
+router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.projectId);
+    const token = String(req.params.token);
+
+    const [proj] = await db.select({
+      name: projects.name,
+      formEnabled: projects.formEnabled,
+      formDisabledMessage: projects.formDisabledMessage,
+      editTokenHours: projects.editTokenHours,
+      participantEditHours: projects.participantEditHours,
+      telegramBotTokenEnc: projects.telegramBotTokenEnc,
+      telegramChatId: projects.telegramChatId,
+    }).from(projects).where(eq(projects.id, pid));
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+    if (!proj.formEnabled) return res.status(403).json({ error: proj.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+
+    const [participant] = await db.select().from(projectParticipants)
+      .where(and(eq(projectParticipants.token, token as any), eq(projectParticipants.projectId, pid)));
+    if (!participant) return res.status(404).json({ error: "رابط غير صالح" });
+    if (participant.submittedAt) return res.status(409).json({ error: "سبق تعبئة النموذج — استخدم رابط التعديل" });
+
+    const parsed = submitFormSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+    const editHours = proj.participantEditHours ?? proj.editTokenHours ?? 48;
+    const tokenExpiresAt = new Date(Date.now() + editHours * 60 * 60 * 1000);
+
+    const autoFields = await db.select({ key: projectFields.key }).from(projectFields)
+      .where(and(eq(projectFields.projectId, pid), sql`${projectFields.fieldType} = 'autoincrement'`));
+    const autoIncrementKeys = autoFields.map(f => f.key);
+
+    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt, autoIncrementKeys);
+    const seqNum = record.sequential_number;
+    const finalData = record.enriched_data;
+
+    // Link participant to record
+    await db.update(projectParticipants).set({
+      recordId: record.id,
+      submittedAt: new Date(),
+    }).where(eq(projectParticipants.id, participant.id));
+
+    await db.insert(projectAuditLog).values({
+      projectId: pid,
+      recordId: record.id,
+      changedBy: `participant:${participant.id}`,
+      action: "create",
+      changesJson: finalData,
+    });
+
+    appendRecordToSheet(pid, finalData as any, seqNum).then(async (rowIndex) => {
+      if (rowIndex) await db.update(projectRecords).set({ sheetsRowIndex: rowIndex }).where(eq(projectRecords.id, record.id));
+    }).catch(console.error);
+
+    // Telegram notification to admin chat (non-blocking)
+    if (proj.telegramBotTokenEnc && proj.telegramChatId) {
+      const sendTelegram = async () => {
+        const tok = decrypt(proj.telegramBotTokenEnc!);
+        if (!tok) return;
+        const fieldDefs = await db.select({ key: projectFields.key, label: projectFields.label }).from(projectFields).where(eq(projectFields.projectId, pid));
+        const labelMap = Object.fromEntries(fieldDefs.map(f => [f.key, f.label]));
+        const data = finalData as Record<string, any>;
+        const escape = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const rows = Object.entries(data).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "").map(([k, v]) => `<b>${escape(labelMap[k] || k)}:</b> ${escape(String(v))}`).join("\n");
+        const now = new Date().toLocaleString("ar-SY", { timeZone: "Asia/Damascus", dateStyle: "full", timeStyle: "medium" });
+        const lines = [`🔔 <b>تسجيل جديد</b>`, `📁 المشروع: <b>${escape(proj.name)}</b>`, `👤 المشارك: <b>${escape(participant.name)}</b>`];
+        if (seqNum) lines.push(`🔢 رقم السجل: <b>${seqNum}</b>`);
+        if (rows) { lines.push(``); lines.push(rows); }
+        lines.push(``); lines.push(`🕒 ${now}`);
+        await fetch(`https://api.telegram.org/bot${tok}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: proj.telegramChatId, text: lines.join("\n"), parse_mode: "HTML" }) });
+      };
+      sendTelegram().catch(console.error);
+    }
+
+    res.json({ ok: true, recordId: record.id, editDeadline: tokenExpiresAt.toISOString() });
+  } catch (err: any) { handleError(res, err); }
+});
+
+// PATCH edit participant form
+router.patch("/:projectId/p/:token/edit", submitLimiter, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.projectId);
+    const token = String(req.params.token);
+
+    const [participant] = await db.select().from(projectParticipants)
+      .where(and(eq(projectParticipants.token, token as any), eq(projectParticipants.projectId, pid)));
+    if (!participant) return res.status(404).json({ error: "رابط غير صالح" });
+    if (!participant.submittedAt) return res.status(400).json({ error: "لم يتم التسجيل بعد" });
+
+    const [proj] = await db.select({ participantEditHours: projects.participantEditHours, formEnabled: projects.formEnabled }).from(projects).where(eq(projects.id, pid));
+    if (!proj?.formEnabled) return res.status(403).json({ error: "النموذج متوقف مؤقتاً" });
+
+    const editHours = proj.participantEditHours ?? 48;
+    const editDeadline = new Date(participant.submittedAt.getTime() + editHours * 60 * 60 * 1000);
+    if (new Date() >= editDeadline) return res.status(410).json({ error: "انتهت فترة التعديل" });
+
+    if (!participant.recordId) return res.status(400).json({ error: "لا يوجد سجل مرتبط" });
+
+    const [existing] = await db.select().from(projectRecords).where(eq(projectRecords.id, participant.recordId));
+    if (!existing) return res.status(404).json({ error: "السجل غير موجود" });
+
+    const parsed = submitFormSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+    // Strip autoincrement + read-only fields
+    const lockedFields = await db.select({ key: projectFields.key }).from(projectFields)
+      .where(and(eq(projectFields.projectId, pid), sql`(${projectFields.fieldType} = 'autoincrement' OR ${projectFields.isReadOnly} = TRUE)`));
+    const safeBody: Record<string, any> = { ...req.body };
+    for (const { key } of lockedFields) {
+      if (key in (existing.data as any)) safeBody[key] = (existing.data as any)[key];
+      else delete safeBody[key];
+    }
+
+    const [updated] = await db.update(projectRecords).set({ data: safeBody, updatedAt: new Date() }).where(eq(projectRecords.id, existing.id)).returning();
+
+    await db.insert(projectAuditLog).values({
+      projectId: pid,
+      recordId: existing.id,
+      changedBy: `participant:${participant.id}`,
+      action: "update",
+      changesJson: safeBody,
+    });
+
+    if (updated.sheetsRowIndex) {
+      updateRecordRow(pid, updated.sheetsRowIndex, updated.data as any, updated.sequentialNumber || 0).catch(console.error);
+    } else {
+      appendRecordToSheet(pid, updated.data as any, updated.sequentialNumber || 0).then(async (rowIndex) => {
+        if (rowIndex) await db.update(projectRecords).set({ sheetsRowIndex: rowIndex }).where(eq(projectRecords.id, updated.id));
+      }).catch(console.error);
+    }
+
+    res.json({ ok: true });
+  } catch (err: any) { handleError(res, err); }
+});
+
+// POST Telegram webhook — links participant token to chat_id via /start {token}
+router.post("/telegram-webhook", async (req: Request, res: Response) => {
+  try {
+    const update = req.body;
+    const message = update?.message;
+    if (!message?.text || !message?.chat?.id) return res.json({ ok: true });
+
+    const text: string = message.text.trim();
+    const chatId = String(message.chat.id);
+
+    // Handle /start {token}
+    if (text.startsWith("/start ")) {
+      const token = text.slice(7).trim();
+      if (!token) return res.json({ ok: true });
+
+      // Find participant by token
+      const [participant] = await db.select({
+        id: projectParticipants.id,
+        name: projectParticipants.name,
+        projectId: projectParticipants.projectId,
+        telegramChatId: projectParticipants.telegramChatId,
+      }).from(projectParticipants).where(eq(projectParticipants.token, token as any));
+
+      if (!participant) return res.json({ ok: true });
+
+      // Link chat_id
+      await db.update(projectParticipants).set({ telegramChatId: chatId }).where(eq(projectParticipants.id, participant.id));
+
+      // Get project bot token to send confirmation
+      const [proj] = await db.select({ telegramBotTokenEnc: projects.telegramBotTokenEnc, name: projects.name })
+        .from(projects).where(eq(projects.id, participant.projectId));
+
+      if (proj?.telegramBotTokenEnc) {
+        const botToken = decrypt(proj.telegramBotTokenEnc);
+        if (botToken) {
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: `✅ <b>تم التفعيل بنجاح!</b>\n\nأهلاً <b>${participant.name}</b> — سيصلك الإشعارات والتذكيرات هنا.`,
+              parse_mode: "HTML",
+            }),
+          }).catch(console.error);
+        }
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[telegram-webhook]", err);
+    res.json({ ok: true }); // Always 200 to Telegram
   }
 });
 

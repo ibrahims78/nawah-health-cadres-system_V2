@@ -13,6 +13,7 @@ import authRoutes from "./routes/auth.js";
 import projectsRoutes from "./routes/projects.js";
 import pformRoutes from "./routes/pform.js";
 import driveOAuthRoutes from "./routes/driveOAuth.js";
+import participantsRoutes from "./routes/participants.js";
 import { uploadsDir } from "./middleware/upload.js";
 import { requireAuth, requirePasswordNotExpired } from "./middleware/auth.js";
 import { db } from "./db.js";
@@ -204,6 +205,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", driveOAuthRoutes);
 // H-03: Block all project API access if mustChangePassword is set
 app.use("/api/projects", requireAuth, requirePasswordNotExpired, projectsRoutes);
+app.use("/api/projects/:id/participants", requireAuth, requirePasswordNotExpired, participantsRoutes);
 app.use("/api/pform", pformRoutes);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
@@ -373,6 +375,33 @@ async function initDB() {
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_client_id TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_client_secret_enc TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_oauth_refresh_token_enc TEXT;
+      -- Participant tracking columns
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS participants_enabled BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_name_field TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_edit_hours INTEGER DEFAULT 48;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_allow_open BOOLEAN NOT NULL DEFAULT false;
+    `);
+
+    // Project participants table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_participants (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        identifier TEXT,
+        identifier_type TEXT DEFAULT 'email',
+        token UUID NOT NULL DEFAULT gen_random_uuid(),
+        telegram_chat_id TEXT,
+        prefill_data JSONB DEFAULT '{}',
+        record_id UUID REFERENCES project_records(id) ON DELETE SET NULL,
+        submitted_at TIMESTAMP,
+        first_opened_at TIMESTAMP,
+        last_notified_at TIMESTAMP,
+        notify_count INTEGER DEFAULT 0,
+        added_at TIMESTAMP DEFAULT NOW(),
+        notes TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS project_participants_token_idx ON project_participants(token);
     `);
     // Migrate legacy single-condition columns (if present) into the new conditions[] array, then drop them
     const legacyColCheck = await pool.query(`

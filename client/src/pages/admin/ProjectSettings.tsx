@@ -34,7 +34,7 @@ export function ProjectSettings() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram" | "audit" | "drive" | "collaborators">("form");
+  const [tab, setTab] = useState<"form" | "fields" | "sheets" | "telegram" | "audit" | "drive" | "collaborators" | "participants">("form");
   const [newCollabUserId, setNewCollabUserId] = useState<string>("");
   const [newCollabPermission, setNewCollabPermission] = useState<"edit" | "full">("edit");
   const [testing, setTesting] = useState(false);
@@ -383,10 +383,11 @@ export function ProjectSettings() {
     }
   };
 
-  type TabKey = "form" | "fields" | "sheets" | "telegram" | "drive" | "audit" | "collaborators";
+  type TabKey = "form" | "fields" | "sheets" | "telegram" | "drive" | "audit" | "collaborators" | "participants";
   const tabs: { key: TabKey; label: string }[] = [
     { key: "form",          label: isAr ? "النموذج" : "Form" },
     { key: "fields",        label: isAr ? "الحقول" : "Fields" },
+    { key: "participants",  label: isAr ? "المشاركون" : "Participants" },
     { key: "sheets",        label: "Google Sheets" },
     { key: "telegram",      label: "Telegram" },
     { key: "drive",         label: isAr ? "مزامنة Drive" : "Drive Sync" },
@@ -1557,6 +1558,109 @@ export function ProjectSettings() {
                 </div>
               )}
             </Card>
+          </div>
+        )}
+
+        {/* ══ PARTICIPANTS TAB ══ */}
+        {tab === "participants" && (
+          <div className="space-y-4">
+            <Card className="p-5 space-y-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Users2 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">{isAr ? "إعدادات التتبع الشخصي للمشاركين" : "Participant Tracking Settings"}</h3>
+              </div>
+
+              {/* Enable/disable */}
+              <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-700">
+                <div>
+                  <Label className="text-sm font-medium">{isAr ? "تفعيل ميزة التتبع" : "Enable Participant Tracking"}</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">{isAr ? "يتيح إنشاء روابط شخصية لكل مشارك" : "Create personal invitation links per participant"}</p>
+                </div>
+                <Switch
+                  checked={!!(project as any)?.participantsEnabled}
+                  onCheckedChange={(v) => {
+                    apiRequest("PATCH", `/api/projects/${id}`, { participantsEnabled: v })
+                      .then(() => qc.invalidateQueries({ queryKey: ["/api/projects", id] }))
+                      .catch(e => toast({ variant: "destructive", description: `❌ ${e.message}` }));
+                  }}
+                  data-testid="switch-participants-enabled"
+                />
+              </div>
+
+              {(project as any)?.participantsEnabled && (
+                <div className="space-y-4 pt-1">
+                  {/* Participant name field */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{isAr ? "حقل اسم المشارك (للتوافق مع الروابط)" : "Participant Name Field"}</Label>
+                    <p className="text-[11px] text-muted-foreground">{isAr ? "الحقل الذي يُعبَّأ تلقائياً باسم المشارك عند فتح الرابط الشخصي" : "Field that gets pre-filled with the participant's name"}</p>
+                    <select
+                      className="w-full border border-slate-200 dark:border-slate-600 rounded-md px-3 py-2 text-sm bg-background"
+                      value={(project as any)?.participantNameField || ""}
+                      onChange={e => {
+                        apiRequest("PATCH", `/api/projects/${id}`, { participantNameField: e.target.value || null })
+                          .then(() => qc.invalidateQueries({ queryKey: ["/api/projects", id] }))
+                          .catch(err => toast({ variant: "destructive", description: `❌ ${err.message}` }));
+                      }}
+                      data-testid="select-participant-name-field"
+                    >
+                      <option value="">{isAr ? "— لا يوجد —" : "— None —"}</option>
+                      {fields.filter(f => ["text", "email", "phone"].includes(f.fieldType)).map(f => (
+                        <option key={f.key} value={f.key}>{f.label} ({f.key})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Edit hours */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{isAr ? "مدة نافذة التعديل (ساعة)" : "Edit Window (hours)"}</Label>
+                    <p className="text-[11px] text-muted-foreground">{isAr ? "عدد الساعات بعد التسجيل يبقى فيها النموذج قابلاً للتعديل" : "Hours after submission the form stays editable"}</p>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={8760}
+                      defaultValue={(project as any)?.participantEditHours ?? 48}
+                      onBlur={e => {
+                        const v = parseInt(e.target.value);
+                        if (v > 0) apiRequest("PATCH", `/api/projects/${id}`, { participantEditHours: v })
+                          .then(() => qc.invalidateQueries({ queryKey: ["/api/projects", id] }))
+                          .catch(err => toast({ variant: "destructive", description: `❌ ${err.message}` }));
+                      }}
+                      data-testid="input-participant-edit-hours"
+                    />
+                  </div>
+
+                  {/* Allow open */}
+                  <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-700">
+                    <div>
+                      <Label className="text-sm font-medium">{isAr ? "السماح بالتسجيل المفتوح" : "Allow Open Registration"}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">{isAr ? "السماح لمن لا يملك رابطاً شخصياً بالتسجيل عبر الرابط العام" : "Allow public form access without a personal token"}</p>
+                    </div>
+                    <Switch
+                      checked={!!(project as any)?.participantAllowOpen}
+                      onCheckedChange={(v) => {
+                        apiRequest("PATCH", `/api/projects/${id}`, { participantAllowOpen: v })
+                          .then(() => qc.invalidateQueries({ queryKey: ["/api/projects", id] }))
+                          .catch(e => toast({ variant: "destructive", description: `❌ ${e.message}` }));
+                      }}
+                      data-testid="switch-participant-allow-open"
+                    />
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            {(project as any)?.participantsEnabled && (
+              <Card className="p-5 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{isAr ? "إدارة قائمة المشاركين" : "Manage Participants List"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{isAr ? "إضافة، استيراد، ومتابعة حالة المشاركين" : "Add, import, and track participant status"}</p>
+                </div>
+                <Button size="sm" onClick={() => nav(`/admin/projects/${id}/participants`)} data-testid="button-go-participants">
+                  <Users2 className="h-3.5 w-3.5 ml-1" />
+                  {isAr ? "فتح إدارة المشاركين" : "Open Participants"}
+                </Button>
+              </Card>
+            )}
           </div>
         )}
 

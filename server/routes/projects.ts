@@ -191,6 +191,11 @@ const PROJECT_SAFE_COLUMNS = {
   hasTelegramToken: sql<boolean>`(${projects.telegramBotTokenEnc} is not null)`,
   driveOAuthClientId: projects.driveOAuthClientId,
   driveOAuthConnected: sql<boolean>`(${projects.driveOAuthRefreshTokenEnc} is not null)`,
+  // Participant tracking
+  participantsEnabled: projects.participantsEnabled,
+  participantNameField: projects.participantNameField,
+  participantEditHours: projects.participantEditHours,
+  participantAllowOpen: projects.participantAllowOpen,
 };
 
 router.get("/:id", requireAuth, requireProjectReadAccess, async (req: Request, res: Response) => {
@@ -277,7 +282,8 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
       "editTokenHours", "formEnabled", "formDisabledMessage", "steps",
       "googleSheetId", "importSheetId", "googleSheetName", "googleServiceAccountEmail",
       "googleDriveFolderId", "driveRootFolderId", "telegramChatId",
-      "driveOAuthClientId"];
+      "driveOAuthClientId",
+      "participantsEnabled", "participantNameField", "participantEditHours", "participantAllowOpen"];
 
     for (const field of plainFields) {
       if (field in body) update[field] = body[field];

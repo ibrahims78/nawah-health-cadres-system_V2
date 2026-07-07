@@ -10,3 +10,4 @@
 - [Drive OAuth2 implementation](drive-oauth2.md) — OAuth2 for personal Gmail Drive; CSRF nonce in session; Client ID change clears refresh token; updateProjectSchema must include driveOAuth* fields
 - [Collaborator access model](collaborator-access-model.md) — three guards (strict/broad/read); file serving checks collaborators; TabKey union to avoid TS widening on conditional spread
 - [Export/import feature design](export-import-feature.md) — template-export is POST (not GET) so password never hits URL; import uses db.transaction() for atomicity; .masarat JSON format
+- [Participant tracking feature](participant-tracking.md) — full invite-link system: schema, 12 API routes, public form /p/:projectId/p/:token, admin page, Telegram webhook; alert-dialog.tsx must be created (package exists but shadcn file was missing)

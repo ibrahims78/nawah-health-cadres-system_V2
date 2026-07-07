@@ -86,6 +86,11 @@ export const projects = pgTable("projects", {
   // Telegram
   telegramBotTokenEnc: text("telegram_bot_token_enc"),
   telegramChatId: text("telegram_chat_id"),
+  // ── Participant Tracking ──────────────────────────────────
+  participantsEnabled: boolean("participants_enabled").default(false),
+  participantNameField: text("participant_name_field"),
+  participantEditHours: integer("participant_edit_hours").default(48),
+  participantAllowOpen: boolean("participant_allow_open").default(false),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -167,6 +172,41 @@ export const projectAuditLog = pgTable("project_audit_log", {
 });
 
 // ============================================================
+// PROJECT COLLABORATORS  (admin grants editor access to non-owned projects)
+// ============================================================
+export const projectCollaborators = pgTable("project_collaborators", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: uuid("granted_by").references(() => users.id),
+  /** "edit"  — content only (records/fields/uploads); cannot delete project or change settings.
+   *  "full"  — equivalent to project owner; all operations including settings & delete. */
+  permission: text("permission").notNull().default("edit"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ============================================================
+// PROJECT PARTICIPANTS (invite-based tracking)
+// ============================================================
+export const projectParticipants = pgTable("project_participants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  identifier: text("identifier"),
+  identifierType: text("identifier_type").default("email"),
+  token: uuid("token").notNull().defaultRandom(),
+  telegramChatId: text("telegram_chat_id"),
+  prefillData: jsonb("prefill_data").$type<Record<string, any>>().default({}),
+  recordId: uuid("record_id").references(() => projectRecords.id, { onDelete: "set null" }),
+  submittedAt: timestamp("submitted_at"),
+  firstOpenedAt: timestamp("first_opened_at"),
+  lastNotifiedAt: timestamp("last_notified_at"),
+  notifyCount: integer("notify_count").default(0),
+  addedAt: timestamp("added_at").defaultNow(),
+  notes: text("notes"),
+});
+
+// ============================================================
 // TYPES
 // ============================================================
 export type User = typeof users.$inferSelect;
@@ -181,6 +221,8 @@ export type InsertProjectRecord = typeof projectRecords.$inferInsert;
 export type ProjectAuditLog = typeof projectAuditLog.$inferSelect;
 export type ProjectFormDraft = typeof projectFormDrafts.$inferSelect;
 export type InsertProjectFormDraft = typeof projectFormDrafts.$inferInsert;
+export type ProjectParticipant = typeof projectParticipants.$inferSelect;
+export type InsertProjectParticipant = typeof projectParticipants.$inferInsert;
 
 // ============================================================
 // ZOD SCHEMAS
@@ -254,6 +296,11 @@ export const updateProjectSchema = z.object({
   telegramBotToken: z.string().nullish(),
   driveOAuthClientId: z.string().nullish(),
   driveOAuthClientSecret: z.string().nullish(),
+  // Participant tracking
+  participantsEnabled: z.boolean().optional(),
+  participantNameField: z.string().nullish(),
+  participantEditHours: z.coerce.number().int().min(1).max(8760).optional(),
+  participantAllowOpen: z.boolean().optional(),
 });
 
 export const updateUserRoleSchema = z.object({
@@ -275,20 +322,6 @@ export const globalSettingsSchema = z.object({
   smtpFromName: z.string().optional(),
 });
 
-// ============================================================
-// PROJECT COLLABORATORS  (admin grants editor access to non-owned projects)
-// ============================================================
-export const projectCollaborators = pgTable("project_collaborators", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  grantedBy: uuid("granted_by").references(() => users.id),
-  /** "edit"  — content only (records/fields/uploads); cannot delete project or change settings.
-   *  "full"  — equivalent to project owner; all operations including settings & delete. */
-  permission: text("permission").notNull().default("edit"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const verifyCodeSchema = z.object({
   code: z.string().min(1, "رمز الدعوة مطلوب").max(200, "الرمز طويل جداً"),
 });
@@ -297,3 +330,20 @@ export const submitFormSchema = z.object({}).catchall(
   z.union([z.string(), z.number(), z.boolean(), z.null(), z.undefined()])
     .transform(v => (v === undefined ? null : v))
 );
+
+export const insertParticipantSchema = z.object({
+  name: z.string().min(1, "الاسم مطلوب"),
+  identifier: z.string().optional(),
+  identifierType: z.enum(["email", "phone", "national_id", "custom"]).default("email"),
+  prefillData: z.record(z.any()).optional(),
+  notes: z.string().optional(),
+});
+
+export const updateParticipantSchema = z.object({
+  name: z.string().min(1).optional(),
+  identifier: z.string().nullish(),
+  identifierType: z.enum(["email", "phone", "national_id", "custom"]).optional(),
+  prefillData: z.record(z.any()).optional(),
+  notes: z.string().nullish(),
+  telegramChatId: z.string().nullish(),
+});
