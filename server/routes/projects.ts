@@ -14,7 +14,8 @@ import ExcelJS from "exceljs";
 import { Readable } from "stream";
 import { fileUpload, publicFileUrl, validateMimeType, validateFieldRestrictions, uploadsDir, organizeUploadedFile } from "../middleware/upload.js";
 import { handleError } from "../utils/errorHandler.js";
-import { randomBytes } from "crypto";
+import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv } from "crypto";
+import { z } from "zod";
 import fs from "fs";
 import path from "path";
 import * as driveStorage from "../services/driveStorage.js";
@@ -1580,6 +1581,402 @@ router.delete("/users/:userId", requireAdmin, async (req: Request, res: Response
     await db.delete(users).where(eq(users.id, uid));
     res.json({ ok: true });
   } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
+// ─── TEMPLATE EXPORT / IMPORT ────────────────────────────────
+
+/** Encrypt plaintext with a password-derived AES-256-GCM key */
+function encryptWithBackupKey(text: string, key: Buffer): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
+}
+
+/** Decrypt base64-encoded AES-256-GCM ciphertext with a password-derived key */
+function decryptWithBackupKey(encBase64: string, key: Buffer): string {
+  const buf = Buffer.from(encBase64, "base64");
+  const iv = buf.subarray(0, 16);
+  const authTag = buf.subarray(16, 32);
+  const encrypted = buf.subarray(32);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  return decipher.update(encrypted) + decipher.final("utf8");
+}
+
+/** Derive a 32-byte AES key from password + hex salt using PBKDF2-SHA256 */
+function deriveBackupKey(password: string, saltHex: string): Buffer {
+  return pbkdf2Sync(password, Buffer.from(saltHex, "hex"), 100_000, 32, "sha256");
+}
+
+/** Zod schema for validating the structure of a .masarat import file */
+const importFileSchema = z.object({
+  _meta: z.object({
+    version: z.string(),
+    platform: z.literal("masarat"),
+    mode: z.enum(["template", "backup"]),
+    encryption: z.object({
+      kdf: z.literal("pbkdf2"),
+      saltHex: z.string().min(1),
+      iterations: z.number().int().positive(),
+    }).nullable().optional(),
+  }),
+  project: z.object({
+    name: z.string().min(1, "اسم المشروع مطلوب"),
+    description: z.string().nullable().optional(),
+    formTitle: z.string().nullable().optional(),
+    formSubtitle: z.string().nullable().optional(),
+    invitationCode: z.string().nullable().optional(),
+    editTokenHours: z.number().nullable().optional(),
+    formEnabled: z.boolean().nullable().optional(),
+    formDisabledMessage: z.string().nullable().optional(),
+    steps: z.array(z.string()).nullable().optional(),
+  }),
+  fields: z.array(z.object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    fieldType: z.string().default("text"),
+    isRequired: z.boolean().nullable().optional(),
+    isVisible: z.boolean().nullable().optional(),
+    options: z.any().optional(),
+    stepNumber: z.number().nullable().optional(),
+    orderIndex: z.number().nullable().optional(),
+    placeholder: z.string().nullable().optional(),
+    validationMin: z.number().nullable().optional(),
+    validationMax: z.number().nullable().optional(),
+    validationRegex: z.string().nullable().optional(),
+    validationMessage: z.string().nullable().optional(),
+    conditions: z.any().optional(),
+    conditionOperator: z.string().nullable().optional(),
+    visibleTo: z.string().nullable().optional(),
+    isReadOnly: z.boolean().nullable().optional(),
+    isFullWidth: z.boolean().nullable().optional(),
+    allowedFileTypes: z.any().optional(),
+    maxFileSizeMb: z.number().nullable().optional(),
+  })).default([]),
+  integrations: z.object({
+    googleSheetId: z.string().nullable().optional(),
+    importSheetId: z.string().nullable().optional(),
+    googleSheetName: z.string().nullable().optional(),
+    googleServiceAccountEmail: z.string().nullable().optional(),
+    googleDriveFolderId: z.string().nullable().optional(),
+    driveRootFolderId: z.string().nullable().optional(),
+    driveSyncEnabled: z.boolean().nullable().optional(),
+    telegramChatId: z.string().nullable().optional(),
+    driveOAuthClientId: z.string().nullable().optional(),
+    googleServiceAccountKeyEnc: z.string().nullable().optional(),
+    telegramBotTokenEnc: z.string().nullable().optional(),
+    driveOAuthClientSecretEnc: z.string().nullable().optional(),
+    driveOAuthRefreshTokenEnc: z.string().nullable().optional(),
+  }).optional(),
+});
+
+// ─── POST /:id/template-export — Export project structure as .masarat file ───
+// POST (not GET) so the backup password travels in the request body, never in the URL.
+router.post("/:id/template-export", requireEditorOrAdmin, requireProjectOwnership, async (req: Request, res: Response) => {
+  try {
+    const pid = String(req.params.id);
+    const mode = (req.body?.mode as string) === "backup" ? "backup" : "template";
+    const password = req.body?.password as string | undefined;
+
+    if (mode === "backup" && (!password || password.length < 8)) {
+      return res.status(400).json({ error: "كلمة مرور النسخ الاحتياطي يجب أن تكون 8 أحرف على الأقل" });
+    }
+
+    const [proj] = await db.select().from(projects).where(eq(projects.id, pid));
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+
+    const fields = await db
+      .select().from(projectFields)
+      .where(eq(projectFields.projectId, pid))
+      .orderBy(projectFields.stepNumber, projectFields.orderIndex);
+
+    const exportData: any = {
+      _meta: {
+        version: "1.0",
+        platform: "masarat",
+        exportedAt: new Date().toISOString(),
+        mode,
+        encryption: null,
+      },
+      project: {
+        name: proj.name,
+        description: proj.description,
+        formTitle: proj.formTitle,
+        formSubtitle: proj.formSubtitle,
+        invitationCode: proj.invitationCode,
+        editTokenHours: proj.editTokenHours,
+        formEnabled: proj.formEnabled,
+        formDisabledMessage: proj.formDisabledMessage,
+        steps: proj.steps,
+      },
+      fields: fields.map(f => ({
+        key: f.key,
+        label: f.label,
+        fieldType: f.fieldType,
+        isRequired: f.isRequired,
+        isVisible: f.isVisible,
+        options: f.options,
+        stepNumber: f.stepNumber,
+        orderIndex: f.orderIndex,
+        placeholder: f.placeholder,
+        validationMin: f.validationMin,
+        validationMax: f.validationMax,
+        validationRegex: f.validationRegex,
+        validationMessage: f.validationMessage,
+        conditions: f.conditions,
+        conditionOperator: f.conditionOperator,
+        visibleTo: f.visibleTo,
+        isReadOnly: f.isReadOnly,
+        isFullWidth: f.isFullWidth,
+        allowedFileTypes: f.allowedFileTypes,
+        maxFileSizeMb: f.maxFileSizeMb,
+      })),
+      integrations: {
+        googleSheetId: proj.googleSheetId,
+        importSheetId: proj.importSheetId,
+        googleSheetName: proj.googleSheetName,
+        googleServiceAccountEmail: proj.googleServiceAccountEmail,
+        googleDriveFolderId: proj.googleDriveFolderId,
+        driveRootFolderId: proj.driveRootFolderId,
+        driveSyncEnabled: proj.driveSyncEnabled,
+        telegramChatId: proj.telegramChatId,
+        driveOAuthClientId: proj.driveOAuthClientId,
+        // Sensitive — null in template mode, re-encrypted in backup mode
+        googleServiceAccountKeyEnc: null as string | null,
+        telegramBotTokenEnc: null as string | null,
+        driveOAuthClientSecretEnc: null as string | null,
+        driveOAuthRefreshTokenEnc: null as string | null,
+      },
+    };
+
+    if (mode === "backup" && password) {
+      const saltHex = randomBytes(16).toString("hex");
+      const backupKey = deriveBackupKey(password, saltHex);
+
+      exportData._meta.encryption = {
+        kdf: "pbkdf2",
+        digest: "sha256",
+        iterations: 100_000,
+        keyLengthBytes: 32,
+        saltHex,
+      };
+
+      const reEncrypt = (encVal: string | null | undefined): string | null => {
+        if (!encVal) return null;
+        const plain = decrypt(encVal);
+        if (!plain) return null;
+        return encryptWithBackupKey(plain, backupKey);
+      };
+
+      exportData.integrations.googleServiceAccountKeyEnc = reEncrypt(proj.googleServiceAccountKeyEnc);
+      exportData.integrations.telegramBotTokenEnc = reEncrypt(proj.telegramBotTokenEnc);
+      exportData.integrations.driveOAuthClientSecretEnc = reEncrypt(proj.driveOAuthClientSecretEnc);
+      exportData.integrations.driveOAuthRefreshTokenEnc = reEncrypt(proj.driveOAuthRefreshTokenEnc);
+    }
+
+    const safeName = (proj.name || "project")
+      .replace(/[^a-zA-Z0-9\u0600-\u06FF_\- ]/g, "_")
+      .replace(/\s+/g, "_")
+      .slice(0, 40);
+    const filename = `${safeName}_${mode}_${new Date().toISOString().split("T")[0]}.masarat`;
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.json(exportData);
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
+/** Shared helper: parse + validate an uploaded .masarat file, optionally decrypt credentials */
+async function parseImportFile(
+  fileBuffer: Buffer,
+  password?: string
+): Promise<{
+  parsed: z.infer<typeof importFileSchema>;
+  decryptedCreds: {
+    googleServiceAccountKey: string | null;
+    telegramBotToken: string | null;
+    driveOAuthClientSecret: string | null;
+    driveOAuthRefreshToken: string | null;
+  };
+}> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fileBuffer.toString("utf8"));
+  } catch {
+    throw new Error("ملف غير صالح — تعذّر قراءة JSON");
+  }
+
+  const result = importFileSchema.safeParse(raw);
+  if (!result.success) {
+    throw new Error(`بنية الملف غير صحيحة: ${result.error.errors[0].message}`);
+  }
+
+  const parsed = result.data;
+  const creds = { googleServiceAccountKey: null as string | null, telegramBotToken: null as string | null, driveOAuthClientSecret: null as string | null, driveOAuthRefreshToken: null as string | null };
+
+  if (parsed._meta.mode === "backup" && parsed._meta.encryption) {
+    if (!password) throw new Error("هذا الملف نسخة احتياطية مشفّرة — كلمة المرور مطلوبة");
+    const enc = parsed._meta.encryption;
+    let backupKey: Buffer;
+    try {
+      backupKey = deriveBackupKey(password, enc.saltHex);
+    } catch {
+      throw new Error("فشل اشتقاق مفتاح التشفير");
+    }
+
+    const tryDecrypt = (encVal: string | null | undefined): string | null => {
+      if (!encVal) return null;
+      try { return decryptWithBackupKey(encVal, backupKey); }
+      catch { throw new Error("كلمة المرور غير صحيحة أو الملف تالف"); }
+    };
+
+    creds.googleServiceAccountKey = tryDecrypt(parsed.integrations?.googleServiceAccountKeyEnc);
+    creds.telegramBotToken = tryDecrypt(parsed.integrations?.telegramBotTokenEnc);
+    creds.driveOAuthClientSecret = tryDecrypt(parsed.integrations?.driveOAuthClientSecretEnc);
+    creds.driveOAuthRefreshToken = tryDecrypt(parsed.integrations?.driveOAuthRefreshTokenEnc);
+  }
+
+  return { parsed, decryptedCreds: creds };
+}
+
+// ─── POST /import/preview — Validate file and return preview (no DB changes) ───
+router.post("/import/preview", requireEditorOrAdmin, upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "الملف مطلوب" });
+    if (req.file.size > 10 * 1024 * 1024) return res.status(400).json({ error: "حجم الملف كبير جداً (الحد 10 MB)" });
+
+    const password = req.body.password as string | undefined;
+    const { parsed } = await parseImportFile(req.file.buffer, password);
+
+    const integ = parsed.integrations || {};
+    const warnings: string[] = [];
+
+    if (integ.telegramChatId && !integ.telegramBotTokenEnc) {
+      warnings.push("Telegram chat ID موجود لكن bot token غير مضمّن — أضفه من إعدادات المشروع بعد الاستيراد");
+    }
+    if ((integ.googleSheetId || integ.googleServiceAccountEmail) && !integ.googleServiceAccountKeyEnc) {
+      warnings.push("إعدادات Google Sheets موجودة لكن Service Account Key غير مضمّن — أضفه من إعدادات المشروع بعد الاستيراد");
+    }
+
+    res.json({
+      ok: true,
+      preview: {
+        projectName: parsed.project.name,
+        mode: parsed._meta.mode,
+        fieldCount: parsed.fields.length,
+        steps: (parsed.project.steps as string[]) || [],
+        hasCredentials: parsed._meta.mode === "backup",
+        integrations: {
+          googleSheets: !!(integ.googleSheetId || integ.googleServiceAccountEmail),
+          telegram: !!(integ.telegramChatId),
+          drive: !!(integ.googleDriveFolderId || integ.driveRootFolderId || integ.driveOAuthClientId),
+        },
+        warnings,
+      },
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "فشل التحقق من الملف" });
+  }
+});
+
+// ─── POST /import — Create a new project from a .masarat file ───
+router.post("/import", requireEditorOrAdmin, upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "الملف مطلوب" });
+    if (req.file.size > 10 * 1024 * 1024) return res.status(400).json({ error: "حجم الملف كبير جداً (الحد 10 MB)" });
+
+    const password = req.body.password as string | undefined;
+    const { parsed, decryptedCreds } = await parseImportFile(req.file.buffer, password);
+
+    const { project: p, fields: rawFields, integrations: integ = {} } = parsed;
+    const userId = (req.session as any).userId;
+
+    // Build project insert
+    const projectInsert: any = {
+      name: p.name,
+      description: p.description ?? null,
+      formTitle: p.formTitle || p.name,
+      formSubtitle: p.formSubtitle ?? null,
+      invitationCode: p.invitationCode || (() => {
+        const prefix = p.name.replace(/\s+/g, "-").toUpperCase().slice(0, 8);
+        const suffix = randomBytes(3).toString("hex").toUpperCase();
+        return `${prefix}-${suffix}`;
+      })(),
+      editTokenHours: p.editTokenHours ?? 48,
+      formEnabled: p.formEnabled ?? true,
+      formDisabledMessage: p.formDisabledMessage ?? null,
+      steps: p.steps ?? ["البيانات الأساسية", "البيانات التفصيلية", "المراجعة"],
+      createdBy: userId,
+      // Non-sensitive integration settings
+      googleSheetId: integ.googleSheetId ?? null,
+      importSheetId: integ.importSheetId ?? null,
+      googleSheetName: integ.googleSheetName ?? "بيانات",
+      googleServiceAccountEmail: integ.googleServiceAccountEmail ?? null,
+      googleDriveFolderId: integ.googleDriveFolderId ?? null,
+      driveRootFolderId: integ.driveRootFolderId ?? null,
+      driveSyncEnabled: integ.driveSyncEnabled ?? false,
+      telegramChatId: integ.telegramChatId ?? null,
+      driveOAuthClientId: integ.driveOAuthClientId ?? null,
+    };
+
+    // Re-encrypt sensitive credentials with this environment's key
+    if (decryptedCreds.googleServiceAccountKey) {
+      projectInsert.googleServiceAccountKeyEnc = encrypt(decryptedCreds.googleServiceAccountKey);
+    }
+    if (decryptedCreds.telegramBotToken) {
+      projectInsert.telegramBotTokenEnc = encrypt(decryptedCreds.telegramBotToken);
+    }
+    if (decryptedCreds.driveOAuthClientSecret) {
+      projectInsert.driveOAuthClientSecretEnc = encrypt(decryptedCreds.driveOAuthClientSecret);
+    }
+    if (decryptedCreds.driveOAuthRefreshToken) {
+      projectInsert.driveOAuthRefreshTokenEnc = encrypt(decryptedCreds.driveOAuthRefreshToken);
+    }
+
+    // Atomic: create project + insert fields in a single transaction
+    const newProj = await db.transaction(async (tx) => {
+      const [proj] = await tx.insert(projects).values(projectInsert).returning();
+
+      if (rawFields.length > 0) {
+        const fieldRows = rawFields.map((f, idx) => ({
+          projectId: proj.id,
+          key: f.key,
+          label: f.label,
+          fieldType: f.fieldType || "text",
+          isRequired: f.isRequired ?? false,
+          isVisible: f.isVisible !== false,
+          options: f.options ?? null,
+          stepNumber: f.stepNumber ?? 1,
+          orderIndex: f.orderIndex ?? idx,
+          placeholder: f.placeholder ?? null,
+          validationMin: f.validationMin ?? null,
+          validationMax: f.validationMax ?? null,
+          validationRegex: f.validationRegex ?? null,
+          validationMessage: f.validationMessage ?? null,
+          conditions: f.conditions ?? null,
+          conditionOperator: (f.conditionOperator as "AND" | "OR") ?? "AND",
+          visibleTo: (f.visibleTo as "all" | "admin" | "editor") ?? "all",
+          isReadOnly: f.isReadOnly ?? false,
+          isFullWidth: f.isFullWidth ?? false,
+          allowedFileTypes: Array.isArray(f.allowedFileTypes) && f.allowedFileTypes.length > 0 ? f.allowedFileTypes : null,
+          maxFileSizeMb: f.maxFileSizeMb ?? null,
+        }));
+        await tx.insert(projectFields).values(fieldRows);
+      }
+
+      return proj;
+    });
+
+    res.json({ ok: true, project: { id: newProj.id, name: newProj.name } });
+  } catch (err: any) {
+    // Known validation errors from parseImportFile throw with a user-facing message
+    if (err.message && !err.code) return res.status(400).json({ error: err.message });
     handleError(res, err);
   }
 });

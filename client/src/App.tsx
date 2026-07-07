@@ -20,6 +20,7 @@ import { ProjectRecordDetails } from "@/pages/admin/ProjectRecordDetails";
 import { ProjectRecordEdit } from "@/pages/admin/ProjectRecordEdit";
 import { ProjectAddRecord } from "@/pages/admin/ProjectAddRecord";
 import { ProjectExport } from "@/pages/admin/ProjectExport";
+import { ProjectImport } from "@/pages/admin/ProjectImport";
 import { ProjectSettings } from "@/pages/admin/ProjectSettings";
 import { GlobalSettings } from "@/pages/admin/GlobalSettings";
 import { ProjectRegister } from "@/pages/ProjectRegister";
@@ -104,6 +105,9 @@ function AppRoutes() {
         </Route>
         <Route path="/admin/projects/:id/export">
           <ProtectedRoute><ProjectExport /></ProtectedRoute>
+        </Route>
+        <Route path="/admin/projects/import">
+          <ProtectedRoute minRole="editor"><ProjectImport /></ProtectedRoute>
         </Route>
         <Route path="/admin/projects/:id/settings">
           <ProtectedRoute minRole="editor"><ProjectSettings /></ProtectedRoute>

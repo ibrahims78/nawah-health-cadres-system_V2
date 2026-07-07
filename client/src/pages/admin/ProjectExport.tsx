@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import {
   Download, FileSpreadsheet, FileText, Loader2,
   Filter, Columns, ChevronDown, ChevronUp, CheckSquare, Square, Calendar,
+  Package, ShieldCheck, Eye, EyeOff, FolderOutput,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { useToast } from "@/hooks/use-toast";
 import type { ProjectField } from "@shared/schema";
 import { useLang } from "@/context/LanguageContext";
 
@@ -28,7 +30,50 @@ export function ProjectExport() {
   const { id } = useParams<{ id: string }>();
   const { lang } = useLang();
   const isAr = lang === "ar";
+  const { toast } = useToast();
 
+  // ── Template export state ──
+  const [templateMode, setTemplateMode] = useState<"template" | "backup">("template");
+  const [templatePassword, setTemplatePassword] = useState("");
+  const [showTemplatePassword, setShowTemplatePassword] = useState(false);
+  const [exportingTemplate, setExportingTemplate] = useState(false);
+
+  const doTemplateExport = async () => {
+    if (templateMode === "backup" && templatePassword.length < 8) {
+      toast({ title: isAr ? "كلمة المرور قصيرة" : "Password too short", description: isAr ? "يجب أن تكون 8 أحرف على الأقل" : "Must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    setExportingTemplate(true);
+    try {
+      // POST so the backup password never appears in the URL or server logs
+      const body: any = { mode: templateMode };
+      if (templateMode === "backup") body.password = templatePassword;
+      const res = await fetch(`/api/projects/${id}/template-export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Export failed"); }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename[^;=\n]*=(UTF-8'')?([^;\n"]*)/i);
+      const filename = match ? decodeURIComponent(match[2]) : `project_${templateMode}.masarat`;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ title: isAr ? "✅ تم التصدير" : "✅ Exported", description: filename });
+      if (templateMode === "backup") setTemplatePassword("");
+    } catch (err: any) {
+      toast({ title: isAr ? "فشل التصدير" : "Export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setExportingTemplate(false);
+    }
+  };
+
+  // ── Data export state ──
   const [format, setFormat] = useState<"xlsx" | "csv">("xlsx");
   const [exporting, setExporting] = useState(false);
   const [preset, setPreset] = useState("full");
@@ -165,8 +210,97 @@ export function ProjectExport() {
 
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{isAr ? "📤 تصدير البيانات" : "📤 Export Data"}</h1>
-          <p className="text-muted-foreground text-sm mt-1">{isAr ? "تصدير سجلات المشروع مع تحكم كامل في الفلاتر والأعمدة" : "Export project records with full control over filters and columns"}</p>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{isAr ? "📤 تصدير" : "📤 Export"}</h1>
+          <p className="text-muted-foreground text-sm mt-1">{isAr ? "تصدير سجلات المشروع أو تصدير القالب لإعادة استخدامه" : "Export project records or export the template for reuse"}</p>
+        </div>
+
+        {/* ── Template Export ── */}
+        <Card className="border-indigo-200 dark:border-indigo-700/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FolderOutput className="h-4 w-4 text-indigo-600" />
+              {isAr ? "تصدير قالب المشروع" : "Export Project Template"}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isAr
+                ? "صدّر هيكل المشروع وإعداداته (بدون بيانات المستخدمين) كملف .masarat قابل للاستيراد"
+                : "Export the project structure and settings (without user data) as an importable .masarat file"}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Mode selection */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setTemplateMode("template")}
+                className={`p-3 rounded-xl border-2 text-right transition-all ${templateMode === "template" ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20" : "border-slate-200 dark:border-slate-700 hover:border-indigo-300"}`}
+                data-testid="template-mode-template"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Package className="h-4 w-4 text-indigo-600" />
+                  <span className="font-semibold text-sm">{isAr ? "قالب قابل للمشاركة" : "Shareable Template"}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">{isAr ? "الهيكل والحقول فقط — بدون اعتمادات" : "Structure & fields only — no credentials"}</p>
+              </button>
+              <button
+                onClick={() => setTemplateMode("backup")}
+                className={`p-3 rounded-xl border-2 text-right transition-all ${templateMode === "backup" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20" : "border-slate-200 dark:border-slate-700 hover:border-amber-300"}`}
+                data-testid="template-mode-backup"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <ShieldCheck className="h-4 w-4 text-amber-600" />
+                  <span className="font-semibold text-sm">{isAr ? "نسخة كاملة للمشروع" : "Full Project Backup"}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">{isAr ? "مع الاعتمادات مشفّرة بكلمة مرور" : "Includes credentials encrypted by password"}</p>
+              </button>
+            </div>
+
+            {/* Password field (backup mode only) */}
+            {templateMode === "backup" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">{isAr ? "كلمة مرور التشفير (8 أحرف على الأقل)" : "Encryption password (min 8 chars)"}</Label>
+                <div className="relative">
+                  <Input
+                    type={showTemplatePassword ? "text" : "password"}
+                    value={templatePassword}
+                    onChange={e => setTemplatePassword(e.target.value)}
+                    placeholder={isAr ? "اختر كلمة مرور قوية..." : "Choose a strong password..."}
+                    dir="ltr"
+                    className="pl-10 font-mono text-sm"
+                    data-testid="input-template-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplatePassword(v => !v)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-700"
+                  >
+                    {showTemplatePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  ⚠️ {isAr ? "احتفظ بكلمة المرور — بدونها لا يمكن استرداد الاعتمادات" : "Keep this password safe — credentials cannot be recovered without it"}
+                </p>
+              </div>
+            )}
+
+            <Button
+              onClick={doTemplateExport}
+              disabled={exportingTemplate || (templateMode === "backup" && templatePassword.length < 8)}
+              variant="outline"
+              className="w-full border-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400"
+              data-testid="button-template-export"
+            >
+              {exportingTemplate
+                ? <><Loader2 className="h-4 w-4 animate-spin ml-2" />{isAr ? "جاري التصدير..." : "Exporting..."}</>
+                : <><Download className="h-4 w-4 ml-2" />{isAr ? "تنزيل ملف .masarat" : "Download .masarat file"}</>}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* ── Divider ── */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+          <span className="text-xs font-medium text-muted-foreground px-2">{isAr ? "تصدير البيانات" : "Data Export"}</span>
+          <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
         </div>
 
         {/* ① File name */}

@@ -10,7 +10,7 @@ import { useProject } from "@/context/ProjectContext";
 import {
   Plus, FolderKanban, Users, Settings, Trash2, LayoutDashboard,
   ExternalLink, Loader2, Search, Copy, Check, Download,
-  SortAsc, ArrowUpDown, Clock, AlignLeft, Users2,
+  SortAsc, ArrowUpDown, Clock, AlignLeft, Users2, Upload,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
@@ -105,11 +105,22 @@ export function Projects() {
             </p>
           </div>
           {canCreateProject && (
-            <Button onClick={() => nav("/admin/projects/new")} data-testid="button-new-project"
-              className="shadow-sm">
-              <Plus className="h-4 w-4 ml-2" />
-              {ar ? "مشروع جديد" : "New Project"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => nav("/admin/projects/import")}
+                data-testid="button-import-project"
+                className="shadow-sm"
+              >
+                <Upload className="h-4 w-4 ml-2" />
+                {ar ? "استيراد" : "Import"}
+              </Button>
+              <Button onClick={() => nav("/admin/projects/new")} data-testid="button-new-project"
+                className="shadow-sm">
+                <Plus className="h-4 w-4 ml-2" />
+                {ar ? "مشروع جديد" : "New Project"}
+              </Button>
+            </div>
           )}
         </div>
 
