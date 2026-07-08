@@ -9,23 +9,30 @@ import express, { Request, Response } from "express";
 import { google } from "googleapis";
 import crypto from "crypto";
 import { db } from "../db.js";
-import { projects } from "../../shared/schema.js";
-import { eq } from "drizzle-orm";
+import { projects, projectCollaborators } from "../../shared/schema.js";
+import { and, eq } from "drizzle-orm";
 import { decrypt, encrypt } from "../services/crypto.js";
 import { requireEditorOrAdmin } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/** Ensure the calling user owns the project or is an admin. */
+/** Ensure the calling user owns the project, is an admin, or is a collaborator with full permission. */
 async function requireDriveProjectAccess(req: Request, res: Response, next: Function) {
   const pid = String(req.params.id);
   const sess = req.session as any;
   const role = sess?.role;
   if (role === "admin") return next();
+  const userId = sess?.userId;
   const [proj] = await db.select({ createdBy: projects.createdBy }).from(projects).where(eq(projects.id, pid));
   if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
-  if (proj.createdBy !== sess?.userId) return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا المشروع" });
-  return next();
+  if (proj.createdBy === userId) return next();
+  // Collaborator with full permission is treated as an owner
+  const [collab] = await db
+    .select({ permission: projectCollaborators.permission })
+    .from(projectCollaborators)
+    .where(and(eq(projectCollaborators.projectId, pid), eq(projectCollaborators.userId, userId)));
+  if (collab?.permission === "full") return next();
+  return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا المشروع" });
 }
 
 /** Redirect URI — must be registered verbatim in Google Cloud Console. */
