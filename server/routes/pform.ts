@@ -397,11 +397,14 @@ router.get("/:projectId/p/:token", async (req: Request, res: Response) => {
       participantsEnabled: projects.participantsEnabled,
       participantAllowOpen: projects.participantAllowOpen,
       participantEditHours: projects.participantEditHours,
+      participantNameField: projects.participantNameField,
       telegramBotTokenEnc: projects.telegramBotTokenEnc,
     }).from(projects).where(eq(projects.id, pid));
 
     if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
     if (!proj.formEnabled) return res.status(403).json({ error: proj.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+    // إصلاح: التحقق من تفعيل ميزة المشاركين قبل السماح بالوصول عبر رابط المشارك الشخصي
+    if (!proj.participantsEnabled) return res.status(403).json({ error: "هذا الرابط غير متاح حالياً — تواصل مع المسؤول" });
 
     const [participant] = await db.select().from(projectParticipants)
       .where(and(eq(projectParticipants.token, token as any), eq(projectParticipants.projectId, pid)));
@@ -471,6 +474,11 @@ router.get("/:projectId/p/:token", async (req: Request, res: Response) => {
       if (rec?.data) prefillData = rec.data as any;
     }
 
+    // إصلاح: تطبيق participantNameField — إذا حدّد المسؤول حقل الاسم، نملأه تلقائياً من اسم المشارك
+    if (proj.participantNameField && participant.name) {
+      prefillData = { ...prefillData, [proj.participantNameField]: participant.name };
+    }
+
     res.json({
       project: { id: proj.id, name: proj.name, formTitle: proj.formTitle, formSubtitle: proj.formSubtitle, steps: proj.steps },
       fields,
@@ -496,11 +504,13 @@ router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, r
       formDisabledMessage: projects.formDisabledMessage,
       editTokenHours: projects.editTokenHours,
       participantEditHours: projects.participantEditHours,
+      participantsEnabled: projects.participantsEnabled,
       telegramBotTokenEnc: projects.telegramBotTokenEnc,
       telegramChatId: projects.telegramChatId,
     }).from(projects).where(eq(projects.id, pid));
     if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
     if (!proj.formEnabled) return res.status(403).json({ error: proj.formDisabledMessage || "النموذج متوقف مؤقتاً" });
+    if (!proj.participantsEnabled) return res.status(403).json({ error: "هذا الرابط غير متاح حالياً — تواصل مع المسؤول" });
 
     const [participant] = await db.select().from(projectParticipants)
       .where(and(eq(projectParticipants.token, token as any), eq(projectParticipants.projectId, pid)));
@@ -574,8 +584,9 @@ router.patch("/:projectId/p/:token/edit", submitLimiter, async (req: Request, re
     if (!participant) return res.status(404).json({ error: "رابط غير صالح" });
     if (!participant.submittedAt) return res.status(400).json({ error: "لم يتم التسجيل بعد" });
 
-    const [proj] = await db.select({ participantEditHours: projects.participantEditHours, formEnabled: projects.formEnabled }).from(projects).where(eq(projects.id, pid));
+    const [proj] = await db.select({ participantEditHours: projects.participantEditHours, formEnabled: projects.formEnabled, participantsEnabled: projects.participantsEnabled }).from(projects).where(eq(projects.id, pid));
     if (!proj?.formEnabled) return res.status(403).json({ error: "النموذج متوقف مؤقتاً" });
+    if (!proj?.participantsEnabled) return res.status(403).json({ error: "هذا الرابط غير متاح حالياً — تواصل مع المسؤول" });
 
     const editHours = proj.participantEditHours ?? 48;
     const editDeadline = new Date(participant.submittedAt.getTime() + editHours * 60 * 60 * 1000);
@@ -623,6 +634,14 @@ router.patch("/:projectId/p/:token/edit", submitLimiter, async (req: Request, re
 // POST Telegram webhook — links participant token to chat_id via /start {token}
 router.post("/telegram-webhook", async (req: Request, res: Response) => {
   try {
+    // إصلاح: التحقق من سر الـ Webhook لمنع الطلبات المزيّفة
+    const expectedSecret = process.env.SESSION_SECRET || "masarat-webhook-secret";
+    const receivedSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
+    if (receivedSecret !== expectedSecret) {
+      // نرجع 200 دائماً لـ Telegram (لا نكشف عن الخطأ للمهاجم)
+      return res.json({ ok: true });
+    }
+
     const update = req.body;
     const message = update?.message;
     if (!message?.text || !message?.chat?.id) return res.json({ ok: true });
@@ -655,13 +674,27 @@ router.post("/telegram-webhook", async (req: Request, res: Response) => {
       if (proj?.telegramBotTokenEnc) {
         const botToken = decrypt(proj.telegramBotTokenEnc);
         if (botToken) {
+          // إصلاح: نضيف رابط النموذج في رسالة التأكيد حتى يعرف المشارك أين يذهب
+          const domains = process.env.REPLIT_DOMAINS?.split(",");
+          const baseUrl = domains?.length
+            ? `https://${domains[0].trim()}`
+            : process.env.REPLIT_DEV_DOMAIN
+              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+              : "";
+          const formLink = baseUrl ? `${baseUrl}/p/${participant.projectId}/p/${token}` : null;
+
+          const confirmText = formLink
+            ? `✅ <b>تم التفعيل بنجاح!</b>\n\nأهلاً <b>${participant.name}</b> — سيصلك الإشعارات والتذكيرات هنا.\n\n🔗 <a href="${formLink}">اضغط هنا لفتح النموذج وتعبئة بياناتك</a>`
+            : `✅ <b>تم التفعيل بنجاح!</b>\n\nأهلاً <b>${participant.name}</b> — سيصلك الإشعارات والتذكيرات هنا.`;
+
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: `✅ <b>تم التفعيل بنجاح!</b>\n\nأهلاً <b>${participant.name}</b> — سيصلك الإشعارات والتذكيرات هنا.`,
+              text: confirmText,
               parse_mode: "HTML",
+              disable_web_page_preview: false,
             }),
           }).catch(console.error);
         }

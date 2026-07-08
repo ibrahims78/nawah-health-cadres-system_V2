@@ -35,16 +35,30 @@ export async function testTelegramBot(
   }
 }
 
-/** جلب آخر المحادثات التي أرسل إليها البوت — يساعد في معرفة Chat ID */
+/** جلب آخر المحادثات التي أرسل إليها البوت — يساعد في معرفة Chat ID
+ *  يقبل webhookUrl + webhookSecret اختياريًا لإعادة تسجيل الـ Webhook بعد جلب المحادثات
+ *  (getUpdates تتطلب حذف الـ Webhook مسبقًا، لذا نعيد تسجيله فورًا بعد الانتهاء)
+ */
 export async function getTelegramUpdates(
-  token: string
+  token: string,
+  webhookUrl?: string,
+  webhookSecret?: string
 ): Promise<{ ok: boolean; chats?: Array<{ id: string; title: string; type: string }>; message?: string }> {
   const base = `https://api.telegram.org/bot${token}`;
   try {
+    // يجب حذف الـ Webhook قبل استخدام getUpdates (Telegram لا يسمح بالاثنين معًا)
     await fetch(`${base}/deleteWebhook`, { method: "POST" }).catch(() => {});
 
     const response = await fetch(`${base}/getUpdates?limit=50&offset=-50`);
     const data = (await response.json()) as any;
+
+    // أعِد تسجيل الـ Webhook فورًا بعد الانتهاء حتى لا تُكسَر ميزة المشاركين
+    if (webhookUrl) {
+      const reregResult = await setWebhook(token, webhookUrl, webhookSecret || "").catch((e) => ({ ok: false, message: String(e) }));
+      if (!reregResult.ok) {
+        console.error("[getTelegramUpdates] فشل إعادة تسجيل الـ Webhook:", reregResult.message);
+      }
+    }
 
     if (!data.ok) {
       const desc: string = data.description || "";
@@ -74,6 +88,10 @@ export async function getTelegramUpdates(
 
     return { ok: true, chats };
   } catch (err: any) {
+    // حاول إعادة الـ Webhook حتى عند الخطأ
+    if (webhookUrl) {
+      await setWebhook(token, webhookUrl, webhookSecret || "").catch(() => {});
+    }
     return { ok: false, message: `❌ ${err.message}` };
   }
 }

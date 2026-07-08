@@ -6,7 +6,15 @@ import { requireAuth, requireAdmin, requireEditorOrAdmin } from "../middleware/a
 import { encrypt, decrypt } from "../services/crypto.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
 import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, exportToProjectSheet, extractSpreadsheetId } from "../services/projectSheets.js";
-import { testTelegramBot, getTelegramUpdates } from "../services/telegram.js";
+import { testTelegramBot, getTelegramUpdates, setWebhook } from "../services/telegram.js";
+
+/** استخراج عنوان التطبيق الأساسي للـ Webhook */
+function getAppBaseUrl(req: Request): string {
+  const domains = process.env.REPLIT_DOMAINS?.split(",");
+  if (domains?.length) return `https://${domains[0].trim()}`;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  return `${req.protocol}://${req.get("host")}`;
+}
 import { sendInvitationEmail, testEmailConnection } from "../services/email.js";
 import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
@@ -315,6 +323,18 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
     }
 
     await db.update(projects).set(update).where(eq(projects.id, String(req.params.id)));
+
+    // تسجيل Webhook تلقائياً عند حفظ Bot Token جديد
+    // (Telegram يحتاج أن يعرف عنوان التطبيق ليرسل رسائل /start من المشاركين)
+    if (body.telegramBotToken) {
+      const baseUrl = getAppBaseUrl(req);
+      const webhookUrl = `${baseUrl}/api/pform/telegram-webhook`;
+      const webhookSecret = process.env.SESSION_SECRET || "masarat-webhook-secret";
+      setWebhook(body.telegramBotToken, webhookUrl, webhookSecret).catch((err) => {
+        console.error("[setWebhook] فشل تسجيل Webhook:", err);
+      });
+    }
+
     res.json({ ok: true });
   } catch (err: any) {
     handleError(res, err);
@@ -1049,7 +1069,11 @@ router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectEditAcc
       if (proj?.telegramBotTokenEnc) botToken = decrypt(proj.telegramBotTokenEnc);
     }
     if (!botToken) return res.status(400).json({ ok: false, message: "أدخل Bot Token أولاً" });
-    const result = await getTelegramUpdates(botToken);
+    // نمرر webhookUrl حتى تُعيد getTelegramUpdates تسجيل الـ Webhook بعد getUpdates
+    const baseUrl = getAppBaseUrl(req);
+    const webhookUrl = `${baseUrl}/api/pform/telegram-webhook`;
+    const webhookSecret = process.env.SESSION_SECRET || "masarat-webhook-secret";
+    const result = await getTelegramUpdates(botToken, webhookUrl, webhookSecret);
     res.json(result);
   } catch (err: any) {
     handleError(res, err, "GET /telegram-updates");

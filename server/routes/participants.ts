@@ -11,6 +11,7 @@ import { decrypt } from "../services/crypto.js";
 import { notifyParticipant, getBotUsername } from "../services/telegram.js";
 import multer from "multer";
 import ExcelJS from "exceljs";
+import { Readable } from "stream";
 
 const router = Router({ mergeParams: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -158,7 +159,8 @@ router.post("/import", requireAuth, requireParticipantEditAccess, upload.single(
     const fieldByLabel = Object.fromEntries(fields.map(f => [f.label.trim().toLowerCase(), f.key]));
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(req.file.buffer);
+    const stream = Readable.from(req.file.buffer);
+    await workbook.xlsx.read(stream as any);
     const ws = workbook.worksheets[0];
     if (!ws) return res.status(400).json({ error: "لم يتم العثور على ورقة بيانات في الملف" });
 
@@ -297,7 +299,15 @@ router.get("/export", requireAuth, requireParticipantReadAccess, async (req: Req
         firstOpenedAt: p.firstOpenedAt ? p.firstOpenedAt.toLocaleString("ar-SY") : "",
         submittedAt: p.submittedAt ? p.submittedAt.toLocaleString("ar-SY") : "",
         hasTelegram: p.telegramChatId ? "✓ نعم" : "✗ لا",
-        participantLink: `${process.env.REPLIT_DEV_DOMAIN ? "https://" + process.env.REPLIT_DEV_DOMAIN : ""}/p/${pid}/p/${p.token}`,
+        participantLink: (() => {
+          const domains = process.env.REPLIT_DOMAINS?.split(",");
+          const base = domains?.length
+            ? `https://${domains[0].trim()}`
+            : process.env.REPLIT_DEV_DOMAIN
+              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+              : `${req.protocol}://${req.get("host")}`;
+          return `${base}/p/${pid}/p/${p.token}`;
+        })(),
         notes: p.notes || "",
       });
     }
