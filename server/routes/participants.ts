@@ -9,12 +9,28 @@ import { requireAuth } from "../middleware/auth.js";
 import { handleError } from "../utils/errorHandler.js";
 import { decrypt } from "../services/crypto.js";
 import { notifyParticipant, getBotUsername } from "../services/telegram.js";
+import { sendParticipantInviteEmail } from "../services/email.js";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { Readable } from "stream";
 
 const router = Router({ mergeParams: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+/** رابط التطبيق المُوثوق — يعتمد على متغيرات البيئة وليس على هيدرز الطلب */
+function getTrustedBaseUrl(req: Request): string {
+  const domains = process.env.REPLIT_DOMAINS?.split(",");
+  if (domains?.length) return `https://${domains[0].trim()}`;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  // Fallback آمن للبيئة المحلية فقط — لن يُستخدم في الإنتاج
+  const host = req.get("host") || "localhost:5000";
+  return `http://${host}`;
+}
+
+/** تحقق بسيط من صيغة البريد الإلكتروني */
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+}
 
 // ─── Access Guards (copied pattern from projects.ts) ─────────
 import { projectCollaborators } from "../../shared/schema.js";
@@ -481,6 +497,101 @@ router.delete("/:pid", requireAuth, requireParticipantEditAccess, async (req: Re
     const participantId = String(req.params.pid);
     await db.delete(projectParticipants)
       .where(and(eq(projectParticipants.id, participantId), eq(projectParticipants.projectId, projectId)));
+    res.json({ ok: true });
+  } catch (err: any) { handleError(res, err); }
+});
+
+// ─── POST /api/projects/:id/participants/send-invite-email-batch ─────────
+// إرسال رابط الدعوة بالبريد الإلكتروني لمجموعة من المشاركين
+router.post("/send-invite-email-batch", requireAuth, requireParticipantEditAccess, async (req: Request, res: Response) => {
+  try {
+    const projectId = String(req.params.id);
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "لم يتم تحديد مشاركين" });
+
+    const [proj] = await db.select({ name: projects.name })
+      .from(projects).where(eq(projects.id, projectId));
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+
+    const baseUrl = getTrustedBaseUrl(req);
+
+    const targets = await db.select().from(projectParticipants)
+      .where(and(eq(projectParticipants.projectId, projectId), inArray(projectParticipants.id, ids)));
+
+    let sent = 0, failed = 0, noEmail = 0;
+    const failures: string[] = [];
+
+    for (const p of targets) {
+      const email = p.identifierType === "email" && p.identifier ? p.identifier.trim() : null;
+      if (!email || !isValidEmail(email)) { noEmail++; continue; }
+
+      const inviteLink = `${baseUrl}/p/${projectId}/p/${p.token}`;
+      const result = await sendParticipantInviteEmail({
+        to: email,
+        participantName: p.name,
+        projectName: proj.name,
+        inviteLink,
+      });
+
+      if (result.ok) {
+        sent++;
+        // تحديث ذري يمنع فقدان الإحصاء عند الإرسال المتزامن
+        await db.execute(sql`
+          UPDATE project_participants
+          SET last_emailed_at = NOW(), email_count = COALESCE(email_count, 0) + 1
+          WHERE id = ${p.id}
+        `);
+      } else {
+        failed++;
+        failures.push(`${p.name}: ${result.error}`);
+      }
+    }
+
+    res.json({ ok: true, sent, failed, noEmail, failures });
+  } catch (err: any) { handleError(res, err); }
+});
+
+// ─── POST /api/projects/:id/participants/:pid/send-invite-email ──────────
+// إرسال رابط الدعوة بالبريد الإلكتروني لمشارك واحد
+router.post("/:pid/send-invite-email", requireAuth, requireParticipantEditAccess, async (req: Request, res: Response) => {
+  try {
+    const projectId = String(req.params.id);
+    const participantId = String(req.params.pid);
+
+    const [proj] = await db.select({ name: projects.name })
+      .from(projects).where(eq(projects.id, projectId));
+    if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
+
+    const [p] = await db.select().from(projectParticipants)
+      .where(and(eq(projectParticipants.id, participantId), eq(projectParticipants.projectId, projectId)));
+    if (!p) return res.status(404).json({ error: "المشارك غير موجود" });
+
+    if (p.identifierType !== "email" || !p.identifier) {
+      return res.status(400).json({ error: "المشارك لا يملك بريداً إلكترونياً مُسجَّلاً — تأكد أن نوع المُعرِّف هو 'email'" });
+    }
+    if (!isValidEmail(p.identifier)) {
+      return res.status(400).json({ error: `البريد الإلكتروني المُسجَّل غير صالح: ${p.identifier}` });
+    }
+
+    const baseUrl = getTrustedBaseUrl(req);
+    const inviteLink = `${baseUrl}/p/${projectId}/p/${p.token}`;
+
+    const result = await sendParticipantInviteEmail({
+      to: p.identifier.trim(),
+      participantName: p.name,
+      projectName: proj.name,
+      inviteLink,
+    });
+
+    if (!result.ok) return res.status(500).json({ error: result.error || "فشل إرسال البريد" });
+
+    // تحديث ذري يمنع فقدان الإحصاء عند الإرسال المتزامن
+    await db.execute(sql`
+      UPDATE project_participants
+      SET last_emailed_at = NOW(), email_count = COALESCE(email_count, 0) + 1
+      WHERE id = ${p.id}
+    `);
+
     res.json({ ok: true });
   } catch (err: any) { handleError(res, err); }
 });

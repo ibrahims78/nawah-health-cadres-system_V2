@@ -202,6 +202,8 @@ export const projectParticipants = pgTable("project_participants", {
   firstOpenedAt: timestamp("first_opened_at"),
   lastNotifiedAt: timestamp("last_notified_at"),
   notifyCount: integer("notify_count").default(0),
+  lastEmailedAt: timestamp("last_emailed_at"),
+  emailCount: integer("email_count").default(0),
   addedAt: timestamp("added_at").defaultNow(),
   notes: text("notes"),
 });

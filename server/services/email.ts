@@ -105,6 +105,125 @@ export async function sendInvitationEmail(
   }
 }
 
+/**
+ * Sends a personalised invitation email to a project participant.
+ * The email contains their name, the project name, and a prominent CTA button
+ * linking directly to their unique registration form URL.
+ */
+export async function sendParticipantInviteEmail(opts: {
+  to: string;
+  participantName: string;
+  projectName: string;
+  inviteLink: string;
+  appName?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { to, participantName, projectName, inviteLink, appName = "منصة مسارات" } = opts;
+  try {
+    const { transporter, fromName, fromUser } = await getTransporter();
+
+    const safeName    = escapeHtml(participantName);
+    const safeProject = escapeHtml(projectName);
+    const safeApp     = escapeHtml(appName);
+    const safeLink    = encodeURI(inviteLink);
+
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromUser}>`,
+      to,
+      subject: `دعوة للتسجيل في ${safeProject}`,
+      html: `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>دعوة للتسجيل</title>
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 100%);padding:32px 40px;text-align:center;">
+              <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:10px 20px;margin-bottom:16px;">
+                <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.5px;">${safeApp}</span>
+              </div>
+              <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:600;">دعوة للتسجيل 📋</h1>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <p style="margin:0 0 12px;color:#374151;font-size:16px;line-height:1.7;">
+                مرحباً <strong>${safeName}</strong>،
+              </p>
+              <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.7;">
+                تمت دعوتك للتسجيل في:
+                <br />
+                <strong style="color:#1d4ed8;font-size:17px;">${safeProject}</strong>
+              </p>
+
+              <!-- Divider -->
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 28px;" />
+
+              <!-- CTA -->
+              <p style="margin:0 0 20px;color:#374151;font-size:14px;">
+                اضغط على الزر أدناه لاستكمال تسجيلك — رابطك الشخصي خاص بك فقط:
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 28px;">
+                    <a href="${safeLink}"
+                       style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:8px;font-size:16px;font-weight:600;letter-spacing:0.3px;">
+                      ابدأ التسجيل الآن ←
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback link -->
+              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:24px;">
+                <p style="margin:0 0 8px;color:#64748b;font-size:12px;">إذا لم يعمل الزر، انسخ الرابط التالي في متصفحك:</p>
+                <p style="margin:0;word-break:break-all;">
+                  <a href="${safeLink}" style="color:#1d4ed8;font-size:12px;">${safeLink}</a>
+                </p>
+              </div>
+
+              <!-- Note -->
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;">
+                <p style="margin:0;color:#92400e;font-size:12px;line-height:1.6;">
+                  ⚠️ <strong>ملاحظة:</strong> هذا الرابط خاص بك ولا تشاركه مع أحد.
+                  إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;text-align:center;">
+              <p style="margin:0;color:#94a3b8;font-size:11px;">
+                أُرسلت هذه الرسالة من ${safeApp} — منصة إدارة نماذج التسجيل والبيانات
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
+    });
+    return { ok: true };
+  } catch (err: any) {
+    console.error("[sendParticipantInviteEmail] Error:", err);
+    return { ok: false, error: err.message };
+  }
+}
+
 export async function testEmailConnection(
   liveConfig?: Partial<SmtpConfig>
 ): Promise<{ ok: boolean; message: string }> {

@@ -398,10 +398,15 @@ async function initDB() {
         first_opened_at TIMESTAMP,
         last_notified_at TIMESTAMP,
         notify_count INTEGER DEFAULT 0,
+        last_emailed_at TIMESTAMP,
+        email_count INTEGER DEFAULT 0,
         added_at TIMESTAMP DEFAULT NOW(),
         notes TEXT
       );
       CREATE UNIQUE INDEX IF NOT EXISTS project_participants_token_idx ON project_participants(token);
+      -- Add email tracking columns to existing tables (idempotent)
+      ALTER TABLE project_participants ADD COLUMN IF NOT EXISTS last_emailed_at TIMESTAMP;
+      ALTER TABLE project_participants ADD COLUMN IF NOT EXISTS email_count INTEGER DEFAULT 0;
     `);
     // Migrate legacy single-condition columns (if present) into the new conditions[] array, then drop them
     const legacyColCheck = await pool.query(`

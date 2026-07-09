@@ -17,7 +17,7 @@ import { useLang } from "@/context/LanguageContext";
 import {
   Users, Plus, Upload, Download, Send, Trash2, Copy, ArrowRight,
   CheckCircle2, Clock, Edit3, Lock, MessageSquare, RefreshCw, Search,
-  UserCheck, Bell, Settings2, ExternalLink, Check,
+  UserCheck, Bell, Settings2, ExternalLink, Check, Mail, AlertCircle,
 } from "lucide-react";
 import type { Project, ProjectField } from "@shared/schema";
 
@@ -32,6 +32,8 @@ interface Participant {
   firstOpenedAt: string | null;
   lastNotifiedAt: string | null;
   notifyCount: number;
+  lastEmailedAt: string | null;
+  emailCount: number;
   addedAt: string;
   notes: string | null;
   status: "unopened" | "opened" | "submitted_editable" | "submitted_locked";
@@ -95,6 +97,11 @@ export function ProjectParticipants() {
   const [notifyMsg, setNotifyMsg] = useState("");
   const [notifyLoading, setNotifyLoading] = useState(false);
   const [notifyBatchMsg, setNotifyBatchMsg] = useState("");
+
+  // Email
+  const [emailBatchDialog, setEmailBatchDialog] = useState(false);
+  const [emailResultDialog, setEmailResultDialog] = useState(false);
+  const [emailBatchResult, setEmailBatchResult] = useState<{ sent: number; failed: number; noEmail: number; failures: string[] } | null>(null);
 
   // Import
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -197,6 +204,28 @@ export function ProjectParticipants() {
     mutationFn: ({ pid, message }: { pid: string; message: string }) =>
       apiRequest("POST", `/api/projects/${id}/participants/${pid}/notify`, { message }),
     onSuccess: () => toast({ description: isAr ? "✅ تم الإرسال" : "✅ Sent" }),
+    onError: (e: any) => toast({ variant: "destructive", description: `❌ ${e.message}` }),
+  });
+
+  const sendEmailOneMut = useMutation({
+    mutationFn: (pid: string) =>
+      apiRequest("POST", `/api/projects/${id}/participants/${pid}/send-invite-email`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/projects", id, "participants"] });
+      toast({ description: isAr ? "✅ تم إرسال البريد بنجاح" : "✅ Email sent successfully" });
+    },
+    onError: (e: any) => toast({ variant: "destructive", description: `❌ ${e.message}` }),
+  });
+
+  const sendEmailBatchMut = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/projects/${id}/participants/send-invite-email-batch`, { ids: [...selected] }),
+    onSuccess: (data: any) => {
+      setEmailBatchDialog(false);
+      setEmailBatchResult(data);
+      setEmailResultDialog(true);
+      qc.invalidateQueries({ queryKey: ["/api/projects", id, "participants"] });
+    },
     onError: (e: any) => toast({ variant: "destructive", description: `❌ ${e.message}` }),
   });
 
@@ -331,6 +360,9 @@ export function ProjectParticipants() {
           {selected.size > 0 && (
             <div className="flex items-center gap-2 border border-primary/30 rounded-lg px-3 py-1.5 bg-primary/5">
               <span className="text-xs font-medium text-primary">{selected.size} {isAr ? "محدد" : "selected"}</span>
+              <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => setEmailBatchDialog(true)}>
+                <Mail className="h-3 w-3 ml-1" />{isAr ? "إرسال بريد" : "Email"}
+              </Button>
               <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => setNotifyBatchDialog(true)}>
                 <MessageSquare className="h-3 w-3 ml-1" />{isAr ? "إشعار" : "Notify"}
               </Button>
@@ -435,10 +467,34 @@ export function ProjectParticipants() {
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
                           </Button>
+                          {/* زر إرسال البريد الإلكتروني — يظهر فقط إذا كان نوع المُعرِّف email */}
+                          {p.identifierType === "email" && p.identifier ? (
+                            <Button
+                              size="icon" variant="ghost"
+                              className={`h-7 w-7 ${p.emailCount ? "text-green-500 hover:text-green-600" : "text-blue-500 hover:text-blue-600"}`}
+                              title={p.emailCount
+                                ? (isAr ? `إعادة إرسال (أُرسل ${p.emailCount} مرة — ${p.lastEmailedAt ? new Date(p.lastEmailedAt).toLocaleDateString(isAr ? "ar" : "en") : ""})` : `Resend (sent ${p.emailCount}×)`)
+                                : (isAr ? `إرسال الرابط إلى ${p.identifier}` : `Send link to ${p.identifier}`)
+                              }
+                              disabled={sendEmailOneMut.isPending}
+                              onClick={() => sendEmailOneMut.mutate(p.id)}
+                              data-testid={`button-send-email-${p.id}`}
+                            >
+                              <Mail className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7 text-slate-300 cursor-not-allowed"
+                              title={isAr ? "لا يوجد بريد إلكتروني مُسجَّل" : "No email registered"}
+                              disabled
+                            >
+                              <Mail className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           {p.telegramChatId && (
                             <Button
-                              size="icon" variant="ghost" className="h-7 w-7 text-blue-500"
-                              title={isAr ? "إرسال إشعار" : "Send notification"}
+                              size="icon" variant="ghost" className="h-7 w-7 text-sky-500 hover:text-sky-600"
+                              title={isAr ? "إرسال إشعار تيليغرام" : "Send Telegram notification"}
                               onClick={() => {
                                 const msg = prompt(isAr ? "نص الرسالة:" : "Message:");
                                 if (msg) notifyOneMut.mutate({ pid: p.id, message: msg });
@@ -474,6 +530,97 @@ export function ProjectParticipants() {
           )}
         </Card>
       </div>
+
+      {/* ─── Email Batch Confirm Dialog ─── */}
+      <Dialog open={emailBatchDialog} onOpenChange={setEmailBatchDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-blue-500" />
+              {isAr ? "إرسال روابط الدعوة بالبريد" : "Send Invite Links by Email"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {isAr
+                ? `سيتم إرسال رابط التسجيل الشخصي بالبريد الإلكتروني لـ ${selected.size} مشارك محدد.`
+                : `A personal registration link will be emailed to ${selected.size} selected participant(s).`}
+            </p>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                {isAr
+                  ? "سيُرسل البريد فقط للمشاركين الذين نوع مُعرِّفهم «بريد إلكتروني» ولديهم عنوان مُسجَّل."
+                  : "Only participants with identifier type \"email\" and a registered address will receive the email."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setEmailBatchDialog(false)}>
+              {isAr ? "إلغاء" : "Cancel"}
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={sendEmailBatchMut.isPending}
+              onClick={() => sendEmailBatchMut.mutate()}
+            >
+              {sendEmailBatchMut.isPending
+                ? <><RefreshCw className="h-3.5 w-3.5 ml-1 animate-spin" />{isAr ? "جاري الإرسال..." : "Sending..."}</>
+                : <><Mail className="h-3.5 w-3.5 ml-1" />{isAr ? "إرسال" : "Send"}</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Email Batch Result Dialog ─── */}
+      <Dialog open={emailResultDialog} onOpenChange={setEmailResultDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              {isAr ? "نتيجة إرسال البريد" : "Email Send Results"}
+            </DialogTitle>
+          </DialogHeader>
+          {emailBatchResult && (
+            <div className="py-2 space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-green-600">{emailBatchResult.sent}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{isAr ? "أُرسل" : "Sent"}</div>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-slate-500">{emailBatchResult.noEmail}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{isAr ? "بدون بريد" : "No Email"}</div>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                  <div className="text-2xl font-bold text-red-500">{emailBatchResult.failed}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{isAr ? "فشل" : "Failed"}</div>
+                </div>
+              </div>
+              {emailBatchResult.failures.length > 0 && (
+                <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg p-3">
+                  <p className="text-xs font-medium text-red-700 dark:text-red-400 mb-1.5">
+                    {isAr ? "تفاصيل الأخطاء:" : "Error details:"}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {emailBatchResult.failures.slice(0, 5).map((f, i) => (
+                      <li key={i} className="text-[11px] text-red-600 dark:text-red-400">{f}</li>
+                    ))}
+                    {emailBatchResult.failures.length > 5 && (
+                      <li className="text-[11px] text-muted-foreground">
+                        {isAr ? `...و ${emailBatchResult.failures.length - 5} أخرى` : `...and ${emailBatchResult.failures.length - 5} more`}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setEmailResultDialog(false)}>{isAr ? "إغلاق" : "Close"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Add Participant Dialog ─── */}
       <Dialog open={addDialog} onOpenChange={setAddDialog}>
