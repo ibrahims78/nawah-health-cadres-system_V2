@@ -7,6 +7,7 @@ import { encrypt, decrypt } from "../services/crypto.js";
 import { insertRecordAtomic } from "../services/recordInsert.js";
 import { appendRecordToSheet, updateRecordRow, deleteRecordRow, testProjectSheetsConnection, fixProjectSheetHeaders, checkProjectSheetColumns, importFromProjectSheet, exportToProjectSheet, extractSpreadsheetId } from "../services/projectSheets.js";
 import { testTelegramBot, getTelegramUpdates, setWebhook } from "../services/telegram.js";
+import { getRecentWebhookChats, hasRecentWebhookChats } from "../services/telegramChatCache.js";
 import { getTelegramWebhookSecret } from "../routes/pform.js";
 
 /** استخراج عنوان التطبيق الأساسي للـ Webhook */
@@ -1075,10 +1076,30 @@ router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectEditAcc
       if (proj?.telegramBotTokenEnc) botToken = decrypt(proj.telegramBotTokenEnc);
     }
     if (!botToken) return res.status(400).json({ ok: false, message: "أدخل Bot Token أولاً" });
-    // نمرر webhookUrl حتى تُعيد getTelegramUpdates تسجيل الـ Webhook بعد getUpdates
+
+    // ── Strategy 1: read from webhook cache (zero side-effects, instant) ──────
+    // Messages delivered to the Webhook are consumed immediately and never appear
+    // in getUpdates. The webhook handler stores every incoming chat in this cache.
+    if (hasRecentWebhookChats()) {
+      const chats = getRecentWebhookChats();
+      return res.json({ ok: true, chats });
+    }
+
+    // ── Strategy 2: fallback to getUpdates (only when webhook cache is empty) ──
+    // This handles the rare case where the Webhook was never hit yet. We must
+    // delete the webhook first (Telegram forbids simultaneous use), then
+    // re-register it immediately after.
     const baseUrl = getAppBaseUrl(req);
     const webhookUrl = `${baseUrl}/api/pform/telegram-webhook`;
     const result = await getTelegramUpdates(botToken, webhookUrl, getTelegramWebhookSecret());
+
+    if (!result.ok || !result.chats?.length) {
+      return res.json({
+        ok: false,
+        message: "أرسل أي رسالة للبوت على تيليغرام ثم اضغط «جلب Chat ID» مرة أخرى",
+      });
+    }
+
     res.json(result);
   } catch (err: any) {
     handleError(res, err, "GET /telegram-updates");

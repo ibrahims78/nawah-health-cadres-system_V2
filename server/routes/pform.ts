@@ -10,6 +10,7 @@ import { sendParticipantConfirmationEmail } from "../services/email.js";
 import rateLimit from "express-rate-limit";
 import { fileUpload, publicFileUrl, validateMimeType, validateFieldRestrictions, organizeUploadedFile } from "../middleware/upload.js";
 import { handleError } from "../utils/errorHandler.js";
+import { storeChatFromWebhook } from "../services/telegramChatCache.js";
 
 const router = Router();
 
@@ -730,6 +731,9 @@ router.post("/telegram-webhook", async (req: Request, res: Response) => {
 
     const text: string = message.text.trim();
     const chatId = String(message.chat.id);
+
+    // Cache every chat that contacts the bot — used by "جلب Chat ID" in admin settings
+    storeChatFromWebhook(chatId, message.chat);
 
     // Handle /start {token}
     if (text.startsWith("/start ")) {
