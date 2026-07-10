@@ -49,7 +49,7 @@ export function ProjectParticipantForm() {
   const [botWarningDismissed, setBotWarningDismissed] = useState(false);
   const uploadFolder = useMemo(() => crypto.randomUUID(), []);
 
-  const { data: formData, isLoading, error } = useQuery<ParticipantFormData>({
+  const { data: formData, isLoading, error, refetch } = useQuery<ParticipantFormData>({
     queryKey: ["/api/pform", projectId, "p", token],
     queryFn: () =>
       fetch(`/api/pform/${projectId}/p/${token}`, { credentials: "include" })
@@ -79,6 +79,19 @@ export function ProjectParticipantForm() {
       reset(formData.prefillData);
     }
   }, [formData?.prefillData]);
+
+  // Re-fetch form data when user returns to the tab so the Telegram banner
+  // disappears immediately after the participant activates the bot.
+  useEffect(() => {
+    const needsCheck = () => !formData?.participant?.telegramChatId && !!formData?.botUsername;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && needsCheck()) {
+        refetch();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [formData?.participant?.telegramChatId, formData?.botUsername, refetch]);
 
   useEffect(() => {
     const el = headerRef.current;
