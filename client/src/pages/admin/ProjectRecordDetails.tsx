@@ -68,7 +68,7 @@ export function ProjectRecordDetails() {
     onSuccess: (res: any) => {
       toast({ description: isAr ? `✅ تمت مزامنة ${res.synced} ملف` : `✅ Synced ${res.synced} file(s)` });
       setSyncModal(false);
-      refetch();
+      qc.invalidateQueries({ queryKey: ["/api/projects", id, "records", recordId] });
       qc.invalidateQueries({ queryKey: ["/api/projects", id, "sync-stats"] });
     },
     onError: (err: any) => {

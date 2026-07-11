@@ -85,29 +85,31 @@ export async function validateMimeType(req: Request, res: Response, next: NextFu
   try {
     const detected = await fileTypeFromFile(filePath);
 
+    const safeUnlink = (p: string) => fs.unlink(p, (e) => { if (e) console.warn(`[upload] failed to delete temp file ${p}:`, e.message); });
+
     if (detected) {
       // MIME detected — must be in the allowlist
       if (!ALLOWED_MIME_TYPES.has(detected.mime)) {
-        fs.unlink(filePath, () => {});
+        safeUnlink(filePath);
         return res.status(400).json({ error: "محتوى الملف لا يتطابق مع امتداده" });
       }
     } else {
       // No magic bytes detected
       if (BINARY_EXTENSIONS.has(ext)) {
         // Binary files must have detectable magic bytes — reject to be safe
-        fs.unlink(filePath, () => {});
+        safeUnlink(filePath);
         return res.status(400).json({ error: "محتوى الملف لا يتطابق مع امتداده" });
       }
       if (!NO_MAGIC_EXTENSIONS.has(ext)) {
         // Unknown extension with no magic bytes — reject
-        fs.unlink(filePath, () => {});
+        safeUnlink(filePath);
         return res.status(400).json({ error: "نوع الملف غير مدعوم" });
       }
       // .txt with no magic bytes is expected — allow
     }
     next();
   } catch (err) {
-    fs.unlink(filePath, () => {});
+    fs.unlink(filePath, (e) => { if (e) console.warn(`[upload] failed to delete temp file after error ${filePath}:`, e.message); });
     return res.status(400).json({ error: "تعذّر التحقق من نوع الملف" });
   }
 }

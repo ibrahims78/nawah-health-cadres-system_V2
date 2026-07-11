@@ -23,7 +23,9 @@ export function getTrustedBaseUrl(req?: Request): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
 
   if (req) {
-    const host = req.get("host") || "localhost:5000";
+    // Strip newlines/CR to prevent Host Header Injection in generated links
+    const rawHost = req.get("host") || "localhost:5000";
+    const host = rawHost.replace(/[\r\n]/g, "").trim() || "localhost:5000";
     console.warn(
       `[getTrustedBaseUrl] لا توجد REPLIT_DOMAINS/REPLIT_DEV_DOMAIN/APP_URL — تم استخدام عنوان الطلب (${host}) كحل مؤقت. ` +
       `في بيئة نشر غير Replit، اضبط متغير البيئة APP_URL لضمان روابط صحيحة في كل مكان (بما فيها الجدولة الدورية التي لا تملك طلباً).`

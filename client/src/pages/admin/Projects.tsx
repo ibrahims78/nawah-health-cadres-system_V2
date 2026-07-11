@@ -82,9 +82,10 @@ export function Projects() {
 
   const copyLink = (p: Project, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(`${window.location.origin}/p/${p.id}/register`);
-    setCopiedId(p.id);
-    setTimeout(() => setCopiedId(null), 2000);
+    navigator.clipboard.writeText(`${window.location.origin}/p/${p.id}/register`).then(() => {
+      setCopiedId(p.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => {});
   };
 
   const SORT_OPTIONS: { key: SortKey; label: string; labelEn: string; icon: any }[] = [

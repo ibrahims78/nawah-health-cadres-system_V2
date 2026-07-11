@@ -33,6 +33,10 @@ import rateLimit from "express-rate-limit";
 
 const router = Router();
 const parseExcelLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, message: { error: "محاولات كثيرة — حاول لاحقاً" } });
+// Admin-only but still rate-limited to prevent email-spam and brute-force account creation
+const inviteLimiter     = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: { error: "محاولات كثيرة — حاول بعد ساعة" } });
+const createUserLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: { error: "محاولات كثيرة — حاول بعد ساعة" } });
+const resetPwdLimiter   = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: "محاولات كثيرة — حاول بعد 15 دقيقة" } });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ─── PROJECT ACCESS GUARDS ────────────────────────────────────
@@ -1129,7 +1133,7 @@ router.post("/test-email", requireEditorOrAdmin, async (req: Request, res: Respo
   res.json(result);
 });
 
-router.post("/send-invitation", requireAdmin, async (req: Request, res: Response) => {
+router.post("/send-invitation", requireAdmin, inviteLimiter, async (req: Request, res: Response) => {
   try {
     const { email, role } = req.body;
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
@@ -1169,7 +1173,7 @@ router.post("/send-invitation", requireAdmin, async (req: Request, res: Response
   }
 });
 
-router.post("/create-user", requireAdmin, async (req: Request, res: Response) => {
+router.post("/create-user", requireAdmin, createUserLimiter, async (req: Request, res: Response) => {
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0].message }); return; }
@@ -1184,7 +1188,7 @@ router.post("/create-user", requireAdmin, async (req: Request, res: Response) =>
   }
 });
 
-router.post("/reset-password/:userId", requireAdmin, async (req: Request, res: Response) => {
+router.post("/reset-password/:userId", requireAdmin, resetPwdLimiter, async (req: Request, res: Response) => {
   try {
     const bcrypt = await import("bcryptjs");
     const { password } = req.body;

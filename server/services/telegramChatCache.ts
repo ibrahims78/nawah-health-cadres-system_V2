@@ -33,12 +33,16 @@ export function storeChatForProject(
     type?: string;
   }
 ): void {
+  const sanitize = (s: string) =>
+    s.replace(/[<>&"']/g, "").replace(/[\r\n\t]/g, " ").trim().slice(0, 120);
+
   const parts = [chat.first_name, chat.last_name].filter(Boolean);
-  const title =
+  const rawTitle =
     chat.title ||
     (parts.length ? parts.join(" ") : undefined) ||
     chat.username ||
     chatId;
+  const title = sanitize(String(rawTitle));
 
   const entry: CachedChat = {
     id: chatId,

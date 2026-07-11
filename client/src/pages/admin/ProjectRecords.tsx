@@ -249,16 +249,18 @@ export function ProjectRecords() {
   };
 
   const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(key);
-    setTimeout(() => setCopiedId(null), 2000);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(key);
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => toast({ variant: "destructive", description: isAr ? "تعذّر النسخ — تحقق من صلاحيات المتصفح" : "Copy failed — check browser permissions" }));
   };
 
   const copyFormLink = () => {
     const url = `${window.location.origin}/p/${id}/register`;
-    navigator.clipboard.writeText(url);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }).catch(() => toast({ variant: "destructive", description: isAr ? "تعذّر النسخ" : "Copy failed" }));
   };
 
   const doImport = async () => {
