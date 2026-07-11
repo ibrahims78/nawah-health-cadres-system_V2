@@ -20,6 +20,7 @@ import {
 import type { ProjectRecord, ProjectField } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/context/LanguageContext";
+import { useToast } from "@/hooks/use-toast";
 
 interface RecordsResponse { data: ProjectRecord[]; total: number; page: number; limit: number; }
 
@@ -105,6 +106,7 @@ export function ProjectRecords() {
   const qc = useQueryClient();
   const { lang } = useLang();
   const isAr = lang === "ar";
+  const { toast } = useToast();
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -212,6 +214,9 @@ export function ProjectRecords() {
       qc.invalidateQueries({ queryKey: ["/api/projects", id, "records"] });
       setDeleteId(null);
     },
+    onError: (err: any) => {
+      toast({ title: isAr ? "خطأ في الحذف" : "Delete failed", description: err?.message || (isAr ? "حدث خطأ غير متوقع" : "Unexpected error"), variant: "destructive" });
+    },
   });
 
   const bulkDeleteMut = useMutation({
@@ -219,6 +224,9 @@ export function ProjectRecords() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/projects", id, "records"] });
       setSelected(new Set());
+    },
+    onError: (err: any) => {
+      toast({ title: isAr ? "خطأ في الحذف الجماعي" : "Bulk delete failed", description: err?.message || (isAr ? "حدث خطأ غير متوقع" : "Unexpected error"), variant: "destructive" });
     },
   });
 

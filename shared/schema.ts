@@ -1,5 +1,5 @@
 import {
-  pgTable, text, integer, boolean, timestamp, uuid, jsonb,
+  pgTable, text, integer, boolean, timestamp, uuid, jsonb, index,
 } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
@@ -133,7 +133,9 @@ export const projectFields = pgTable("project_fields", {
   // File-field restrictions (null = use global defaults)
   allowedFileTypes: jsonb("allowed_file_types").$type<string[] | null>().default(null),
   maxFileSizeMb: integer("max_file_size_mb"),
-});
+}, (t) => ({
+  projectIdIdx: index("project_fields_project_id_idx").on(t.projectId),
+}));
 
 // ============================================================
 // PROJECT FORM DRAFTS (server-persisted autosave for public form)
@@ -150,7 +152,9 @@ export const projectFormDrafts = pgTable("project_form_drafts", {
   remindersSent: integer("reminders_sent").default(0),
   lastReminderAt: timestamp("last_reminder_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  projectIdIdx: index("project_form_drafts_project_id_idx").on(t.projectId),
+}));
 
 // ============================================================
 // PROJECT RECORDS (dynamic data as JSONB)
@@ -169,7 +173,10 @@ export const projectRecords = pgTable("project_records", {
   driveFiles: jsonb("drive_files").$type<Record<string, { fileId: string; driveUrl: string; originalName: string; syncedAt: string } | null>>().default({}),
   driveFolderId: text("drive_folder_id"),
   syncStatus: text("sync_status").default("local"),
-});
+}, (t) => ({
+  projectIdIdx: index("project_records_project_id_idx").on(t.projectId),
+  submittedAtIdx: index("project_records_submitted_at_idx").on(t.submittedAt),
+}));
 
 // ============================================================
 // PROJECT AUDIT LOG
@@ -177,12 +184,17 @@ export const projectRecords = pgTable("project_records", {
 export const projectAuditLog = pgTable("project_audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
-  recordId: uuid("record_id").references(() => projectRecords.id, { onDelete: "cascade" }),
+  // set null on record delete so audit history is preserved even when a record is removed
+  recordId: uuid("record_id").references(() => projectRecords.id, { onDelete: "set null" }),
   changedBy: text("changed_by"),
   action: text("action").notNull(),
   changedAt: timestamp("changed_at").defaultNow(),
   changesJson: jsonb("changes_json"),
-});
+}, (t) => ({
+  projectIdIdx: index("project_audit_log_project_id_idx").on(t.projectId),
+  recordIdIdx: index("project_audit_log_record_id_idx").on(t.recordId),
+  changedAtIdx: index("project_audit_log_changed_at_idx").on(t.changedAt),
+}));
 
 // ============================================================
 // PROJECT COLLABORATORS  (admin grants editor access to non-owned projects)
@@ -196,7 +208,10 @@ export const projectCollaborators = pgTable("project_collaborators", {
    *  "full"  — equivalent to project owner; all operations including settings & delete. */
   permission: text("permission").notNull().default("edit"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  projectIdIdx: index("project_collaborators_project_id_idx").on(t.projectId),
+  userIdIdx: index("project_collaborators_user_id_idx").on(t.userId),
+}));
 
 // ============================================================
 // PROJECT PARTICIPANTS (invite-based tracking)
@@ -219,7 +234,10 @@ export const projectParticipants = pgTable("project_participants", {
   emailCount: integer("email_count").default(0),
   addedAt: timestamp("added_at").defaultNow(),
   notes: text("notes"),
-});
+}, (t) => ({
+  projectIdIdx: index("project_participants_project_id_idx").on(t.projectId),
+  submittedAtIdx: index("project_participants_submitted_at_idx").on(t.submittedAt),
+}));
 
 // ============================================================
 // TYPES

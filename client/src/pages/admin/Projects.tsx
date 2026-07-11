@@ -18,6 +18,7 @@ import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useLang } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 // ── Deterministic gradient per project ──────────────────────────
 const GRADIENTS = [
@@ -52,11 +53,15 @@ export function Projects() {
   const [sort, setSort] = useState<SortKey>("newest");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const { toast } = useToast();
   const { data: projects = [], isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/projects/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/projects"] }); setDeleteId(null); },
+    onError: (err: any) => {
+      toast({ title: ar ? "خطأ في الحذف" : "Delete failed", description: err?.message || (ar ? "حدث خطأ غير متوقع" : "An unexpected error occurred"), variant: "destructive" });
+    },
   });
 
   const sorted = useMemo(() => {

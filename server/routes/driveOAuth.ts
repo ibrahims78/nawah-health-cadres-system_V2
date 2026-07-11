@@ -84,7 +84,8 @@ router.get("/projects/:id/drive-oauth/url", requireEditorOrAdmin, requireDrivePr
 
     res.json({ authUrl, redirectUri: getRedirectUri() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("[driveOAuth] generateUrl error:", err);
+    res.status(500).json({ error: "فشل إنشاء رابط التفويض — تحقق من Client ID و Client Secret" });
   }
 });
 
@@ -150,7 +151,8 @@ router.get("/drive-oauth/callback", async (req: Request, res: Response) => {
 
     return res.redirect(settingsUrl("&oauth=success"));
   } catch (err: any) {
-    return res.redirect(settingsUrl(`&oauth=error&msg=${encodeURIComponent(err.message)}`));
+    console.error("[driveOAuth] callback token exchange error:", err);
+    return res.redirect(settingsUrl("&oauth=error&msg=token_exchange_failed"));
   }
 });
 
@@ -161,7 +163,8 @@ router.delete("/projects/:id/drive-oauth/disconnect", requireEditorOrAdmin, requ
     await db.update(projects).set({ driveOAuthRefreshTokenEnc: null }).where(eq(projects.id, pid));
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("[driveOAuth] disconnect error:", err);
+    res.status(500).json({ error: "فشل إلغاء الاتصال — حاول مجدداً" });
   }
 });
 

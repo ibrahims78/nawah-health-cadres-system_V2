@@ -150,9 +150,10 @@ app.get("/uploads/*", async (req, res) => {
       if (record.tokenExpiresAt && record.tokenExpiresAt < new Date()) {
         return res.status(410).json({ error: "انتهت صلاحية الرابط" });
       }
-      // IDOR guard: verify the requested file is actually referenced in this record's data
+      // IDOR guard: verify the requested file path is stored as an exact JSON string value in this record's data
+      const storedPath = "/uploads/" + normalized;
       const recordDataStr = JSON.stringify(record.data ?? {});
-      if (!recordDataStr.includes(filename)) {
+      if (!recordDataStr.includes(JSON.stringify(storedPath))) {
         return res.status(403).json({ error: "لا تملك صلاحية الوصول لهذا الملف" });
       }
     } catch {
@@ -161,13 +162,15 @@ app.get("/uploads/*", async (req, res) => {
   } else if (sessionRole !== "admin" && sessionRole !== "viewer") {
     // Editors: allow access to files in records of projects they own OR are collaborators on.
     try {
+      // Use the full stored path for matching to prevent substring-only false positives
+      const storedPath = "/uploads/" + normalized;
       const [owned] = await db
         .select({ id: projectRecords.id })
         .from(projectRecords)
         .innerJoin(projects, eq(projects.id, projectRecords.projectId))
         .where(and(
           eq(projects.createdBy, sessionUserId),
-          sql`${projectRecords.data}::text ILIKE ${"%" + filename + "%"}`,
+          sql`${projectRecords.data}::text LIKE ${"%" + JSON.stringify(storedPath) + "%"}`,
         ))
         .limit(1);
       if (owned) {
@@ -182,7 +185,7 @@ app.get("/uploads/*", async (req, res) => {
             eq(projectCollaborators.projectId, projects.id),
             eq(projectCollaborators.userId, sessionUserId),
           ))
-          .where(sql`${projectRecords.data}::text ILIKE ${"%" + filename + "%"}`)
+          .where(sql`${projectRecords.data}::text LIKE ${"%" + JSON.stringify(storedPath) + "%"}`)
           .limit(1);
         if (!collabOwned) {
           return res.status(403).json({ error: "لا تملك صلاحية الوصول لهذا الملف" });
@@ -434,6 +437,20 @@ async function initDB() {
         ALTER TABLE project_fields DROP COLUMN IF EXISTS condition_value;
       `);
     }
+    // Performance indexes (idempotent — CREATE INDEX IF NOT EXISTS)
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS project_fields_project_id_idx ON project_fields(project_id);
+      CREATE INDEX IF NOT EXISTS project_form_drafts_project_id_idx ON project_form_drafts(project_id);
+      CREATE INDEX IF NOT EXISTS project_records_project_id_idx ON project_records(project_id);
+      CREATE INDEX IF NOT EXISTS project_records_submitted_at_idx ON project_records(submitted_at);
+      CREATE INDEX IF NOT EXISTS project_audit_log_project_id_idx ON project_audit_log(project_id);
+      CREATE INDEX IF NOT EXISTS project_audit_log_record_id_idx ON project_audit_log(record_id);
+      CREATE INDEX IF NOT EXISTS project_audit_log_changed_at_idx ON project_audit_log(changed_at);
+      CREATE INDEX IF NOT EXISTS project_collaborators_project_id_idx ON project_collaborators(project_id);
+      CREATE INDEX IF NOT EXISTS project_collaborators_user_id_idx ON project_collaborators(user_id);
+      CREATE INDEX IF NOT EXISTS project_participants_project_id_idx ON project_participants(project_id);
+      CREATE INDEX IF NOT EXISTS project_participants_submitted_at_idx ON project_participants(submitted_at);
+    `);
     console.log("✅ Database tables initialized");
   } catch (err) {
     console.error("❌ DB init error:", err);
