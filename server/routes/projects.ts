@@ -259,6 +259,16 @@ router.post("/", requireEditorOrAdmin, async (req: Request, res: Response) => {
         placeholder: f.placeholder || null,
         allowedFileTypes: Array.isArray(f.allowedFileTypes) && f.allowedFileTypes.length > 0 ? f.allowedFileTypes : null,
         maxFileSizeMb: f.maxFileSizeMb ? Number(f.maxFileSizeMb) : null,
+        // Advanced field options — configured via FieldEditor in CreateProject wizard (Phase 2)
+        validationMin: f.validationMin ?? null,
+        validationMax: f.validationMax ?? null,
+        validationRegex: f.validationRegex || null,
+        validationMessage: f.validationMessage || null,
+        conditions: Array.isArray(f.conditions) && f.conditions.length > 0 ? f.conditions : null,
+        conditionOperator: (f.conditionOperator === "OR" || f.conditionOperator === "AND") ? f.conditionOperator : null,
+        visibleTo: (["admin", "editor"].includes(f.visibleTo)) ? f.visibleTo : "all",
+        isReadOnly: !!f.isReadOnly,
+        isFullWidth: !!f.isFullWidth,
       }));
       await db.insert(projectFields).values(fieldRows);
     }

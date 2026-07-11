@@ -3,10 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { DesignerCredit } from "@/components/DesignerCredit";
 import {
   Loader2, CheckCircle, ChevronLeft, ChevronRight,
@@ -15,9 +12,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/context/LanguageContext";
-import { FileField } from "@/components/FileField";
 import type { ProjectField } from "@shared/schema";
-import { isFieldVisible as checkFieldVisible } from "@/lib/fieldVisibility";
+import { useProjectFormEngine } from "@/hooks/useProjectFormEngine";
+import { DynamicFieldRenderer } from "@/components/forms/DynamicFieldRenderer";
 
 const STEP_ICONS = [User, Briefcase, Building2, MapPin, ClipboardCheck, FileText];
 
@@ -82,38 +79,10 @@ export function ProjectParticipantForm() {
     }
   }, [formData?.prefillData]);
 
-  // إصلاح: عندما يصبح حقل مخفياً بسبب عدم تحقق شرطه، نمسح قيمته المخزَّنة —
-  // بدل الاحتفاظ بقيمة قديمة قد تُرسَل لاحقاً رغم أن الحقل لم يعد ظاهراً للمستخدم.
-  useEffect(() => {
-    for (const f of fields) {
-      if (f.fieldType === "heading") continue;
-      if (!checkFieldVisible(f as any, formValues) && formValues[f.key] !== undefined && formValues[f.key] !== "") {
-        setValue(f.key, "");
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(formValues), fields]);
-
-  /** يبني قواعد التحقق (required/min/max/regex) لحقل معيّن اعتماداً على إعدادات المسؤول */
-  const fieldValidationRules = (f: ProjectField) => {
-    const rules: Record<string, any> = {};
-    if (f.isRequired) {
-      rules.required = isAr ? `${f.label} مطلوب` : `${f.label} is required`;
-    }
-    if (f.fieldType === "email") {
-      rules.pattern = { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: isAr ? "بريد إلكتروني غير صحيح" : "Invalid email" };
-    }
-    if (f.validationRegex) {
-      try {
-        rules.pattern = { value: new RegExp(f.validationRegex), message: f.validationMessage || (isAr ? "قيمة غير صحيحة" : "Invalid value") };
-      } catch { /* regex غير صالح من إعدادات المسؤول — نتجاهله بأمان */ }
-    }
-    if (f.fieldType === "number") {
-      if (f.validationMin !== null && f.validationMin !== undefined) rules.min = { value: f.validationMin, message: f.validationMessage || (isAr ? `القيمة الدنيا ${f.validationMin}` : `Min ${f.validationMin}`) };
-      if (f.validationMax !== null && f.validationMax !== undefined) rules.max = { value: f.validationMax, message: f.validationMessage || (isAr ? `القيمة القصوى ${f.validationMax}` : `Max ${f.validationMax}`) };
-    }
-    return rules;
-  };
+  // useProjectFormEngine handles: clear-hidden-fields effect + isFieldVisible + fieldValidationRules
+  const { isFieldVisible, fieldValidationRules } = useProjectFormEngine({
+    fields, formValues, setValue, isAr,
+  });
 
   // Re-fetch form data when user returns to the tab so the Telegram banner
   // disappears immediately after the participant activates the bot.
@@ -200,62 +169,7 @@ export function ProjectParticipantForm() {
   };
   const goToStep = (s: number) => setStep(s);
 
-  // ── Render helpers ──
-  const renderField = (f: ProjectField) => {
-    const visible = checkFieldVisible(f as any, formValues);
-    if (!visible) return null;
-    if (f.fieldType === "heading") return (
-      <div key={f.id} className="col-span-2 pt-2">
-        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 pb-2">{f.label}</h3>
-      </div>
-    );
-    const isFullW = f.isFullWidth || ["textarea", "file"].includes(f.fieldType);
-    const fieldError = (errors as any)?.[f.key]?.message as string | undefined;
-    const rules = fieldValidationRules(f);
-    return (
-      <div key={f.id} className={cn("space-y-1.5", isFullW ? "col-span-2" : "col-span-1")}>
-        <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-          {f.label}{f.isRequired && <span className="text-red-500 mr-0.5">*</span>}
-        </Label>
-        {f.fieldType === "textarea" ? (
-          <Textarea {...register(f.key, rules)} placeholder={f.placeholder || ""} rows={3} className="text-sm" />
-        ) : f.fieldType === "select" || f.fieldType === "radio" ? (
-          <select
-            {...register(f.key, rules)}
-            className="w-full border border-slate-200 dark:border-slate-600 rounded-md px-3 py-2 text-sm bg-background"
-          >
-            <option value="">{isAr ? "— اختر —" : "— Select —"}</option>
-            {(f.options as string[] || []).map((opt: string) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        ) : f.fieldType === "checkbox" ? (
-          <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" {...register(f.key, rules)} id={f.key} className="h-4 w-4 rounded" />
-            <Label htmlFor={f.key} className="text-sm cursor-pointer">{f.placeholder || f.label}</Label>
-          </div>
-        ) : f.fieldType === "file" ? (
-          <FileField
-            fieldKey={f.key}
-            uploadUrl={`/api/pform/${projectId}/upload${token ? `?participantToken=${encodeURIComponent(token)}` : ""}`}
-            uploadFolder={uploadFolder}
-            allowedTypes={f.allowedFileTypes as string[] | null | undefined}
-            maxSizeMb={f.maxFileSizeMb ?? undefined}
-            value={formValues[f.key] || ""}
-            onChange={(url) => { setValue(f.key, url, { shouldValidate: true, shouldDirty: true }); }}
-          />
-        ) : (
-          <Input
-            {...register(f.key, rules)}
-            type={f.fieldType === "number" ? "number" : f.fieldType === "date" ? "date" : f.fieldType === "email" ? "email" : f.fieldType === "phone" ? "tel" : "text"}
-            placeholder={f.placeholder || ""}
-            className="text-sm"
-          />
-        )}
-        {fieldError && <p className="text-[11px] text-red-500 mt-0.5">{fieldError}</p>}
-      </div>
-    );
-  };
+  // ── renderField replaced by DynamicFieldRenderer — see JSX below ──
 
   // ── Error / loading states ──
   if (isLoading) return (
@@ -394,10 +308,25 @@ export function ProjectParticipantForm() {
           {step < reviewStep ? (
             <Card className="p-6 shadow-sm">
               <div className="grid grid-cols-2 gap-4">
-                {getAllStepFields(step).map(f => {
-                  if (!checkFieldVisible(f as any, formValues)) return null;
-                  return renderField(f);
-                })}
+                {getAllStepFields(step)
+                  .filter(f => isFieldVisible(f))
+                  .map(f => (
+                    <DynamicFieldRenderer
+                      key={f.id}
+                      field={f}
+                      register={register}
+                      errors={errors}
+                      formValues={formValues}
+                      setValue={setValue}
+                      isAr={isAr}
+                      validationRules={fieldValidationRules(f)}
+                      uploadConfig={{
+                        url: `/api/pform/${projectId}/upload${token ? `?participantToken=${encodeURIComponent(token)}` : ""}`,
+                        folder: uploadFolder,
+                      }}
+                      labelClassName="text-xs font-medium text-slate-600 dark:text-slate-400"
+                    />
+                  ))}
               </div>
             </Card>
           ) : (

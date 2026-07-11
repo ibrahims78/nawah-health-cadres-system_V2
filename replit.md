@@ -73,6 +73,25 @@ The following was done to get the project running on Replit (re-verified after a
 4. **Workflow** — `Start application` runs `npm run dev` (concurrently starts Vite on port 5000 and Express on port 3001). Vite proxies `/api/*` to the backend automatically.
 5. **First run** — Verified: the app shows the setup wizard at `/` on a fresh database (no admin account yet) to create the first admin account.
 
+## Architecture — Unified Components (added 2026-07-11)
+
+Three major shared components were extracted as part of the unification plan (docs/unification-plan.md). Any new field type, validation rule, or form rendering logic should be added to these shared files — they automatically propagate to all pages.
+
+### 1. `client/src/components/fields/FieldEditor.tsx`
+Unified single-field editor used in **ProjectSettings** (tab "fields") and **CreateProject** (wizard step 1). Covers: field type, label, key, step, placeholder, required/visible toggles, conditions, validation (min/max/regex/message), access control (visibleTo, isReadOnly), full-width, file settings, select/radio options.
+
+- **Rule:** Any new field type or advanced property must be added here only — it will appear in all admin pages automatically.
+- Companion utility: `client/src/lib/fieldEditorUtils.ts` (FieldEditorField type, FIELD_TYPES arrays, getFieldTypes/getCreateFieldTypes).
+
+### 2. `client/src/hooks/useProjectFormEngine.ts`
+Shared form logic hook used by **ProjectRegister**, **ProjectEditForm**, and **ProjectParticipantForm**. Provides:
+- `isFieldVisible(f)` — conditional field visibility
+- `fieldValidationRules(f)` — full validation (required + email pattern + admin-configured regex/min/max)
+- Internal "clear hidden fields" useEffect — automatically zeros out values when a conditional field is hidden
+
+### 3. `client/src/components/forms/DynamicFieldRenderer.tsx`
+Renders a single form field (all types) inside public-facing forms. Used by all three form pages. Each page keeps its own unique context (upload URL, auth token, draft logic, etc.) outside this component.
+
 ## User Preferences
 
 - Keep bilingual support (Arabic/English) intact across all changes

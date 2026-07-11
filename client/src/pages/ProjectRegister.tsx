@@ -5,9 +5,7 @@ import { useForm } from "react-hook-form";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { DesignerCredit } from "@/components/DesignerCredit";
 import {
   Loader2, CheckCircle, ChevronLeft, ChevronRight, Shield,
@@ -16,9 +14,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/context/LanguageContext";
-import { FileField } from "@/components/FileField";
 import type { ProjectField } from "@shared/schema";
-import { isFieldVisible as checkFieldVisible } from "@/lib/fieldVisibility";
+import { useProjectFormEngine } from "@/hooks/useProjectFormEngine";
+import { DynamicFieldRenderer } from "@/components/forms/DynamicFieldRenderer";
 
 const STEP_ICONS = [Shield, User, Briefcase, Building2, MapPin, ClipboardCheck, FileText];
 
@@ -160,6 +158,11 @@ export function ProjectRegister() {
 
   // Autosave form values + current step to localStorage (fast, local) and the server (durable, cross-device)
   const watchedValues = watch();
+
+  // Shared engine: handles clear-hidden-fields effect + provides isFieldVisible + fieldValidationRules
+  const { isFieldVisible, fieldValidationRules } = useProjectFormEngine({
+    fields, formValues: watchedValues, setValue, isAr,
+  });
   useEffect(() => {
     if (!codeVerified || submitted) return;
     const t = setTimeout(() => {
@@ -203,25 +206,14 @@ export function ProjectRegister() {
     }
   }, [codeVerified]);
 
-  const isFieldVisible = (f: ProjectField, watched: Record<string, any>) => checkFieldVisible(f as any, watched);
 
-  // إصلاح: مسح قيمة الحقل عند إخفائه بسبب شرط غير متحقق — يمنع إرسال قيمة قديمة
-  // لحقل لم يعد المستخدم يراه (ولا يُسمح بإعادة تعبئته من مسودة قديمة).
-  useEffect(() => {
-    for (const f of fields) {
-      if (f.fieldType === "heading" || f.fieldType === "autoincrement") continue;
-      if (!checkFieldVisible(f as any, watchedValues) && watchedValues[f.key] !== undefined && watchedValues[f.key] !== "") {
-        setValue(f.key, "");
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(watchedValues), fields]);
+  // useProjectFormEngine handles the clear-hidden-fields effect automatically.
 
   const getStepFields = (stepNum: number) =>
     fields.filter(f => (f.stepNumber || 1) === stepNum && f.isVisible !== false);
 
-  const getVisibleStepFields = (stepNum: number, watched: Record<string, any>) =>
-    getStepFields(stepNum).filter(f => isFieldVisible(f, watched));
+  const getVisibleStepFields = (stepNum: number, _watched?: Record<string, any>) =>
+    getStepFields(stepNum).filter(f => isFieldVisible(f));
 
   const isReviewStep = step === totalSteps - 1;
   const progressPercent = totalSteps > 1 ? Math.round((step / (totalSteps - 1)) * 100) : 100;
@@ -252,7 +244,7 @@ export function ProjectRegister() {
 
   const nextStep = async () => {
     const watched = getValues();
-    const visibleFields = getVisibleStepFields(step + 1, watched);
+    const visibleFields = getVisibleStepFields(step + 1);
     const keys = visibleFields.map(f => f.key);
     const valid = await trigger(keys);
     if (valid) {
@@ -277,7 +269,7 @@ export function ProjectRegister() {
     const date = new Date().toLocaleDateString(isAr ? "ar-SY" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
     const sectionsHtml = printSteps.map((stepName, si) => {
-      const stepFields = getVisibleStepFields(si + 1, vals);
+      const stepFields = getVisibleStepFields(si + 1);
       if (stepFields.length === 0) return "";
       const rows = stepFields.map(f => {
         const val = vals[f.key];
@@ -488,98 +480,7 @@ export function ProjectRegister() {
     navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  const renderField = (f: ProjectField) => {
-    // autoincrement fields are filled server-side — never shown to the public
-    if (f.fieldType === "autoincrement") return null;
-    // heading fields render as static instructional text — no input, no label wrapper
-    if (f.fieldType === "heading") {
-      return (
-        <div key={f.id} className="col-span-2 pt-2">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 border-r-4 border-primary pr-3 py-1">
-            {f.label}
-          </p>
-          {f.placeholder && (
-            <p className="text-xs text-muted-foreground mt-1 pr-4">{f.placeholder}</p>
-          )}
-        </div>
-      );
-    }
-    return (
-    <div key={f.id} className={cn("space-y-1.5", ((f as any).isFullWidth || f.fieldType === "textarea" || f.fieldType === "file" || f.fieldType === "checkbox") ? "col-span-2" : "")}>
-      <Label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-        {f.label}
-        {f.isRequired && <span className="text-red-500 mr-1">*</span>}
-      </Label>
-
-      {f.fieldType === "checkbox" ? (
-        <label className="flex items-center gap-2 cursor-pointer pt-1">
-          <input
-            type="checkbox"
-            {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
-            className="accent-primary w-4 h-4 rounded"
-            data-testid={`checkbox-${f.key}`}
-          />
-          <span className="text-sm text-slate-600 dark:text-slate-300">{f.placeholder || ""}</span>
-        </label>
-      ) : f.fieldType === "textarea" ? (
-        <Textarea
-          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
-          placeholder={f.placeholder || ""}
-          rows={3}
-          data-testid={`input-${f.key}`}
-        />
-      ) : f.fieldType === "select" && f.options ? (
-        <select
-          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
-          className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition"
-          data-testid={`select-${f.key}`}>
-          <option value="">{isAr ? "— اختر —" : "— Select —"}</option>
-          {(f.options as string[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
-        </select>
-      ) : f.fieldType === "radio" && f.options ? (
-        <div className="flex flex-wrap gap-3 pt-1">
-          {(f.options as string[]).map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-primary/50 transition">
-              <input type="radio" {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
-                value={opt} className="accent-primary w-3.5 h-3.5" />
-              <span>{opt}</span>
-            </label>
-          ))}
-        </div>
-      ) : f.fieldType === "file" ? (
-        <>
-          <input type="hidden" {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })} />
-          <FileField
-            value={watch(f.key)}
-            onChange={url => setValue(f.key, url, { shouldValidate: true })}
-            uploadUrl={`/api/pform/${projectId}/upload`}
-            fieldKey={f.key}
-            uploadFolder={uploadFolder}
-            allowedTypes={(f as any).allowedFileTypes}
-            maxSizeMb={(f as any).maxFileSizeMb}
-          />
-        </>
-      ) : (
-        <Input
-          {...register(f.key, { required: f.isRequired ? (isAr ? `${f.label} مطلوب` : `${f.label} is required`) : false })}
-          type={
-            f.fieldType === "number" ? "number" :
-            f.fieldType === "date" ? "date" :
-            f.fieldType === "email" ? "email" :
-            f.fieldType === "phone" ? "tel" : "text"
-          }
-          placeholder={f.placeholder || ""}
-          data-testid={`input-${f.key}`}
-        />
-      )}
-      {(errors as any)[f.key] && (
-        <p className="text-xs text-red-500 flex items-center gap-1 mt-0.5">
-          <span>⚠</span> {(errors as any)[f.key]?.message}
-        </p>
-      )}
-    </div>
-  );
-  };
+  // renderField replaced by DynamicFieldRenderer — see JSX below
 
   /* ─── Loading ─── */
   if (isLoading) return (
@@ -671,7 +572,7 @@ export function ProjectRegister() {
   );
 
   /* ─── Main form ─── */
-  const currentStepFields = isReviewStep ? [] : getVisibleStepFields(step + 1, watchedValues);
+  const currentStepFields = isReviewStep ? [] : getVisibleStepFields(step + 1);
   const CurrentIcon = STEP_ICONS[step % STEP_ICONS.length];
   const allValues = getValues();
 
@@ -795,7 +696,7 @@ export function ProjectRegister() {
 
                 {/* One card per step */}
                 {steps.slice(0, -1).map((stepName, si) => {
-                  const stepFields = getVisibleStepFields(si + 1, allValues);
+                  const stepFields = getVisibleStepFields(si + 1);
                   if (stepFields.length === 0) return null;
                   const StepIcon = STEP_ICONS[si % STEP_ICONS.length];
                   const vals = allValues;
@@ -871,7 +772,22 @@ export function ProjectRegister() {
                 <div className="p-5">
                   {currentStepFields.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {currentStepFields.map(f => renderField(f))}
+                      {currentStepFields.map(f => (
+                        <DynamicFieldRenderer
+                          key={f.id}
+                          field={f}
+                          register={register}
+                          errors={errors}
+                          formValues={watchedValues}
+                          setValue={setValue}
+                          isAr={isAr}
+                          validationRules={fieldValidationRules(f)}
+                          uploadConfig={{
+                            url: `/api/pform/${projectId}/upload`,
+                            folder: uploadFolder,
+                          }}
+                        />
+                      ))}
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-6">{isAr ? "لا توجد حقول لهذه الخطوة" : "No fields for this step"}</p>

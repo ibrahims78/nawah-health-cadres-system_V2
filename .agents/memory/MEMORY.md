@@ -14,3 +14,4 @@
 - [Email participant invite](email-participant-invite.md) — single + batch email send; getTrustedBaseUrl() not req.headers; atomic SQL emailCount; isValidEmail() guard before send
 - [Automated reminder scheduler](scheduler-design.md) — setInterval 30min; per-process isRunning lock; atomic DB claim before send; Telegram-first channel, email as fallback (not both); rollback counter on failed send
 - [Participants hardening follow-up](participants-hardening-followup.md) — server allowlist validation, bulk-delete 409+force safety, shared base-URL helper, batch-send throttling, hidden-field clearing pattern
+- [Unification shared components](unification-shared-components.md) — FieldEditor, useProjectFormEngine, DynamicFieldRenderer: add new field types/validation here only, propagates everywhere

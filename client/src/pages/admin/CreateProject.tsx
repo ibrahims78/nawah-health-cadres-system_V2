@@ -10,36 +10,23 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import {
-  Upload, ArrowRight, ArrowLeft, Check, Loader2, Plus, Trash2,
-  FileSpreadsheet, FolderPlus, GripVertical, Eye, EyeOff, FileUp,
+  Upload, ArrowRight, ArrowLeft, Check, Loader2, Plus,
+  FileSpreadsheet, FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/context/LanguageContext";
+import { FieldEditor } from "@/components/fields/FieldEditor";
+import type { FieldEditorField } from "@/lib/fieldEditorUtils";
 
-interface ParsedColumn {
-  originalLabel: string; label: string; key: string;
-  fieldType: string; isRequired: boolean; isVisible: boolean;
-  stepNumber: number; orderIndex: number; samples: string[];
+// ParsedColumn now extends the unified FieldEditorField so the shared FieldEditor component
+// works for both CreateProject (wizard step 1) and ProjectSettings (field editor tab).
+interface ParsedColumn extends FieldEditorField {
+  // Excel-import specific — kept here so existing Excel parsing code works unchanged
+  originalLabel: string;
+  samples: string[];
   selected: boolean;
-  options?: string[];
+  orderIndex: number;
 }
-
-const FIELD_TYPES_AR = [
-  { value: "text", label: "📝 نص" }, { value: "number", label: "🔢 رقم" },
-  { value: "date", label: "📅 تاريخ" }, { value: "select", label: "📋 قائمة منسدلة" },
-  { value: "radio", label: "🔘 اختيار واحد" }, { value: "textarea", label: "📄 نص طويل" },
-  { value: "phone", label: "📞 هاتف" }, { value: "email", label: "✉️ بريد إلكتروني" },
-  { value: "file", label: "📎 رفع ملف" },
-  { value: "autoincrement", label: "🔁 ترقيم تلقائي" },
-];
-const FIELD_TYPES_EN = [
-  { value: "text", label: "📝 Text" }, { value: "number", label: "🔢 Number" },
-  { value: "date", label: "📅 Date" }, { value: "select", label: "📋 Dropdown" },
-  { value: "radio", label: "🔘 Single Choice" }, { value: "textarea", label: "📄 Long Text" },
-  { value: "phone", label: "📞 Phone" }, { value: "email", label: "✉️ Email" },
-  { value: "file", label: "📎 File Upload" },
-  { value: "autoincrement", label: "🔁 Auto Number" },
-];
 
 const WIZARD_STEPS_AR = ["رفع الملف", "تحرير الحقول", "إعدادات المشروع", "إنشاء"];
 const WIZARD_STEPS_EN = ["Upload File", "Edit Fields", "Project Settings", "Create"];
@@ -56,6 +43,8 @@ export function CreateProject() {
   const [uploadError, setUploadError] = useState("");
   const [columns, setColumns] = useState<ParsedColumn[]>([]);
   const [manualMode, setManualMode] = useState(false);
+  // Controls which field's advanced panel is open in the wizard
+  const [expandedFieldIdx, setExpandedFieldIdx] = useState<number | null>(null);
 
   // Project settings
   const [projectName, setProjectName] = useState("");
@@ -108,9 +97,22 @@ export function CreateProject() {
       }
       const selectedFields = columns.filter(c => c.selected).map((c, idx) => ({
         key: c.key, label: c.label, fieldType: c.fieldType,
-        isRequired: c.isRequired, isVisible: c.isVisible,
+        isRequired: c.isRequired, isVisible: c.isVisible !== false,
         stepNumber: c.stepNumber, orderIndex: idx,
+        placeholder: c.placeholder || null,
         options: (c.fieldType === "select" || c.fieldType === "radio") ? (c.options ?? []) : undefined,
+        allowedFileTypes: c.fieldType === "file" ? (c.allowedFileTypes || null) : undefined,
+        maxFileSizeMb: c.fieldType === "file" ? (c.maxFileSizeMb || null) : undefined,
+        // Advanced options — persist conditions, validation, and access control configured in wizard
+        conditions: c.conditions || null,
+        conditionOperator: c.conditionOperator || null,
+        validationMin: c.validationMin ?? null,
+        validationMax: c.validationMax ?? null,
+        validationRegex: c.validationRegex || null,
+        validationMessage: c.validationMessage || null,
+        visibleTo: c.visibleTo || "all",
+        isReadOnly: c.isReadOnly || false,
+        isFullWidth: c.isFullWidth || false,
       }));
       const steps = stepsText.split("\n").map(s => s.trim()).filter(Boolean);
       return apiRequest("POST", "/api/projects", {
@@ -233,247 +235,20 @@ export function CreateProject() {
                 <p className="text-center text-sm text-muted-foreground py-8">{ar ? "لا يوجد حقول. أضف حقلاً للبدء." : "No fields. Add a field to get started."}</p>
               )}
               {columns.map((col, idx) => (
-                <div
+                <FieldEditor
                   key={idx}
-                  className={cn(
-                    "border rounded-xl overflow-hidden transition-all",
-                    col.selected
-                      ? col.isVisible !== false
-                        ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50"
-                        : "border-dashed border-slate-300 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/20 opacity-60"
-                      : "border-dashed border-slate-200 dark:border-slate-700 opacity-40 bg-slate-50 dark:bg-slate-800/30"
-                  )}
-                  data-testid={`field-row-${idx}`}
-                >
-                  {/* ── Main row ── */}
-                  <div className="flex items-center gap-2 p-3">
-
-                    {/* Excel mode: include/exclude checkbox */}
-                    {!manualMode && (
-                      <input
-                        type="checkbox"
-                        checked={col.selected}
-                        onChange={e => updateColumn(idx, { selected: e.target.checked })}
-                        className="rounded accent-primary flex-shrink-0 w-4 h-4"
-                        data-testid={`field-select-${idx}`}
-                        title={ar ? "تضمين هذا الحقل في المشروع" : "Include this field in the project"}
-                      />
-                    )}
-
-                    {/* Label + Key */}
-                    <div className="grid grid-cols-2 gap-2 flex-1 min-w-0">
-                      <Input
-                        value={col.label}
-                        onChange={e => updateColumn(idx, { label: e.target.value })}
-                        placeholder={ar ? "الاسم المعروض للمستخدم" : "Display label"}
-                        className="h-8 text-sm"
-                        disabled={!col.selected}
-                        data-testid={`field-label-${idx}`}
-                      />
-                      <Input
-                        value={col.key}
-                        onChange={e => updateColumn(idx, { key: e.target.value })}
-                        placeholder={ar ? "المفتاح الداخلي" : "Internal key"}
-                        className="h-8 text-xs font-mono text-slate-500"
-                        disabled={!col.selected}
-                        data-testid={`field-key-${idx}`}
-                      />
-                    </div>
-
-                    {/* Type */}
-                    <select
-                      value={col.fieldType}
-                      onChange={e => updateColumn(idx, { fieldType: e.target.value })}
-                      className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs min-w-[130px] disabled:opacity-50"
-                      disabled={!col.selected}
-                      data-testid={`field-type-${idx}`}
-                    >
-                      {(ar ? FIELD_TYPES_AR : FIELD_TYPES_EN).map(t => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                    </select>
-
-                    {/* Step */}
-                    <select
-                      value={col.stepNumber}
-                      onChange={e => updateColumn(idx, { stepNumber: Number(e.target.value) })}
-                      className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs w-24 disabled:opacity-50"
-                      disabled={!col.selected}
-                      data-testid={`field-step-${idx}`}
-                    >
-                      {[1, 2, 3, 4, 5].map(s => (
-                        <option key={s} value={s}>{ar ? `الخطوة ${s}` : `Step ${s}`}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* ── Controls bar ── */}
-                  <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
-
-                    {/* Required toggle */}
-                    <button
-                      type="button"
-                      onClick={() => updateColumn(idx, { isRequired: !col.isRequired })}
-                      disabled={!col.selected}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition-all disabled:opacity-40",
-                        col.isRequired
-                          ? "bg-rose-50 border-rose-300 text-rose-600 dark:bg-rose-900/30 dark:border-rose-700 dark:text-rose-400"
-                          : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
-                      )}
-                      data-testid={`field-required-${idx}`}
-                      title={ar ? "إلزامي — المستخدم مُلزم بملء هذا الحقل" : "Required — user must fill this field"}
-                    >
-                      <span>{col.isRequired ? "✱" : "○"}</span>
-                      {col.isRequired ? (ar ? "إلزامي" : "Required") : (ar ? "اختياري" : "Optional")}
-                    </button>
-
-                    {/* Visible toggle */}
-                    <button
-                      type="button"
-                      onClick={() => updateColumn(idx, { isVisible: col.isVisible === false ? true : false })}
-                      disabled={!col.selected}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition-all disabled:opacity-40",
-                        col.isVisible !== false
-                          ? "bg-sky-50 border-sky-300 text-sky-600 dark:bg-sky-900/30 dark:border-sky-700 dark:text-sky-400"
-                          : "bg-slate-100 border-slate-300 text-slate-400 dark:bg-slate-800 dark:border-slate-600 line-through"
-                      )}
-                      title={ar
-                        ? (col.isVisible !== false ? "الحقل ظاهر في النموذج — اضغط لإخفائه" : "الحقل مخفي من النموذج — اضغط لإظهاره")
-                        : (col.isVisible !== false ? "Visible in form — click to hide" : "Hidden from form — click to show")}
-                    >
-                      {col.isVisible !== false
-                        ? <Eye className="h-3 w-3" />
-                        : <EyeOff className="h-3 w-3" />}
-                      {ar
-                        ? (col.isVisible !== false ? "ظاهر في النموذج" : "مخفي من النموذج")
-                        : (col.isVisible !== false ? "Visible" : "Hidden")}
-                    </button>
-
-                    {/* Spacer */}
-                    <div className="flex-1" />
-
-                    {/* DELETE — always visible and clearly red */}
-                    <button
-                      type="button"
-                      onClick={() => removeColumn(idx)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border border-red-200 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white hover:border-red-500 transition-all dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-600 dark:hover:border-red-600 dark:hover:text-white"
-                      data-testid={`field-remove-${idx}`}
-                      title={ar ? "حذف هذا الحقل" : "Delete this field"}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      {ar ? "حذف" : "Delete"}
-                    </button>
-                  </div>
-
-                  {/* ── Sample data (Excel import) ── */}
-                  {col.samples && col.samples.length > 0 && col.selected && (
-                    <div className="px-3 pb-2 flex gap-1.5 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground">{ar ? "أمثلة:" : "Samples:"}</span>
-                      {col.samples.slice(0, 5).map((s, i) => (
-                        <span key={i} className="text-[10px] bg-slate-100 dark:bg-slate-700 text-muted-foreground px-2 py-0.5 rounded">{s}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* ── File upload options ── */}
-                  {col.selected && col.fieldType === "file" && (
-                    <div className="mx-3 mb-3 p-3 rounded-lg bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 space-y-3">
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
-                        <FileUp className="h-3.5 w-3.5" />
-                        {ar ? "إعدادات رفع الملف" : "File Upload Settings"}
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-muted-foreground mb-2">
-                          {ar ? "أنواع الملفات المسموحة — اتركه فارغاً للسماح بأي ملف" : "Allowed file types — leave empty to allow all"}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx", "txt"].map(ext => {
-                            const current: string[] = (col as any).allowedFileTypes || [];
-                            const isChecked = current.includes(ext);
-                            return (
-                              <label key={ext} className={cn(
-                                "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] cursor-pointer select-none font-medium transition-all",
-                                isChecked ? "bg-blue-500 border-blue-500 text-white" : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
-                              )}>
-                                <input
-                                  type="checkbox"
-                                  className="hidden"
-                                  checked={isChecked}
-                                  onChange={e => {
-                                    const prev: string[] = (col as any).allowedFileTypes || [];
-                                    const next = e.target.checked ? [...prev, ext] : prev.filter(t => t !== ext);
-                                    updateColumn(idx, { allowedFileTypes: next.length > 0 ? next : undefined } as any);
-                                  }}
-                                />
-                                .{ext}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="text-[11px] text-muted-foreground whitespace-nowrap">
-                          {ar ? "الحجم الأقصى (MB)" : "Max size (MB)"}
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={50}
-                          value={(col as any).maxFileSizeMb || ""}
-                          onChange={e => updateColumn(idx, { maxFileSizeMb: e.target.value ? Number(e.target.value) : undefined } as any)}
-                          placeholder={ar ? "افتراضي: 10" : "Default: 10"}
-                          className="w-32 h-7 rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 text-xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Select / Radio options ── */}
-                  {col.selected && (col.fieldType === "select" || col.fieldType === "radio") && (
-                    <div className="mx-3 mb-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
-                      <p className="text-[11px] font-semibold text-slate-500">
-                        {ar ? "الخيارات" : "Options"}
-                        <span className="text-red-400 mr-1">*</span>
-                      </p>
-                      <div className="space-y-1.5">
-                        {(col.options ?? []).map((opt, oi) => (
-                          <div key={oi} className="flex items-center gap-2">
-                            <Input
-                              value={opt}
-                              onChange={e => {
-                                const next = [...(col.options ?? [])];
-                                next[oi] = e.target.value;
-                                updateColumn(idx, { options: next });
-                              }}
-                              className="h-7 text-xs flex-1"
-                              placeholder={ar ? `الخيار ${oi + 1}` : `Option ${oi + 1}`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = (col.options ?? []).filter((_, i) => i !== oi);
-                                updateColumn(idx, { options: next });
-                              }}
-                              className="h-7 w-7 flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => updateColumn(idx, { options: [...(col.options ?? []), ""] })}
-                          className="flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-                        >
-                          <Plus className="h-3 w-3" />
-                          {ar ? "إضافة خيار" : "Add option"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  field={col as FieldEditorField}
+                  index={idx}
+                  allFields={columns as FieldEditorField[]}
+                  isAr={ar}
+                  onUpdate={upd => updateColumn(idx, upd as Partial<ParsedColumn>)}
+                  onRemove={() => removeColumn(idx)}
+                  showIncludeCheckbox={!manualMode}
+                  expanded={expandedFieldIdx === idx}
+                  onToggleExpand={() => setExpandedFieldIdx(expandedFieldIdx === idx ? null : idx)}
+                  fieldTypeSet="create"
+                  outerTestId={`field-row-${idx}`}
+                />
               ))}
             </div>
 
