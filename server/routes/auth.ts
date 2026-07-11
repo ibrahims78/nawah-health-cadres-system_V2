@@ -50,8 +50,12 @@ router.get("/setup-required", setupRequiredLimiter, async (_req, res) => {
   try {
     const [result] = await db.select({ count: count() }).from(users);
     res.json({ required: (result?.count || 0) === 0 });
-  } catch {
-    res.json({ required: true });
+  } catch (err: any) {
+    // Do NOT return { required: true } here — a DB failure must not be
+    // misinterpreted as "no admin exists yet", which would expose the setup
+    // wizard on a healthy system that simply has a transient DB error.
+    console.error("[ERROR] GET /api/auth/setup-required:", err);
+    res.status(503).json({ error: "قاعدة البيانات غير متاحة مؤقتاً — حاول مجدداً" });
   }
 });
 

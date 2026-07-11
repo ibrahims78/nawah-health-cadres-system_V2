@@ -312,7 +312,7 @@ router.patch("/:id", requireEditorOrAdmin, requireProjectOwnership, async (req: 
     const plainFields = ["name", "description", "formTitle", "formSubtitle", "invitationCode",
       "editTokenHours", "formEnabled", "formDisabledMessage", "steps",
       "googleSheetId", "importSheetId", "googleSheetName", "googleServiceAccountEmail",
-      "googleDriveFolderId", "driveRootFolderId", "telegramChatId",
+      "googleDriveFolderId", "driveRootFolderId", "driveSyncEnabled", "telegramChatId",
       "driveOAuthClientId",
       "participantsEnabled", "participantNameField", "participantEditHours", "participantAllowOpen",
       "reminderEnabled", "reminderIntervalDays", "reminderMaxCount", "confirmationEmailEnabled",

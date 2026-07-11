@@ -364,7 +364,7 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS project_audit_log (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
-        record_id UUID REFERENCES project_records(id) ON DELETE CASCADE,
+        record_id UUID REFERENCES project_records(id) ON DELETE SET NULL,
         changed_by TEXT,
         action TEXT NOT NULL,
         changed_at TIMESTAMP DEFAULT NOW(),
@@ -465,17 +465,44 @@ async function initDB() {
         ALTER TABLE project_fields DROP COLUMN IF EXISTS condition_value;
       `);
     }
+    // ── Fix audit_log FK: older installs used ON DELETE CASCADE which destroys
+    //    audit history when a record is deleted. Migrate to SET NULL so the log row
+    //    survives with record_id = NULL (the Drizzle schema has always declared SET NULL).
+    {
+      const cascadeCheck = await pool.query(`
+        SELECT tc.constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.referential_constraints rc
+          ON tc.constraint_name = rc.constraint_name
+        JOIN information_schema.key_column_usage kcu
+          ON kcu.constraint_name = tc.constraint_name
+        WHERE tc.table_name = 'project_audit_log'
+          AND tc.constraint_type = 'FOREIGN KEY'
+          AND kcu.column_name = 'record_id'
+          AND rc.delete_rule = 'CASCADE'
+      `);
+      if (cascadeCheck.rows.length > 0) {
+        const fkName: string = cascadeCheck.rows[0].constraint_name;
+        await pool.query(`ALTER TABLE project_audit_log DROP CONSTRAINT "${fkName}"`);
+        await pool.query(`ALTER TABLE project_audit_log ADD CONSTRAINT project_audit_log_record_id_fkey FOREIGN KEY (record_id) REFERENCES project_records(id) ON DELETE SET NULL`);
+        console.log("✅ Migrated project_audit_log.record_id FK from CASCADE to SET NULL");
+      }
+    }
+
     // Performance indexes (idempotent — CREATE INDEX IF NOT EXISTS)
     await pool.query(`
       CREATE INDEX IF NOT EXISTS project_fields_project_id_idx ON project_fields(project_id);
       CREATE INDEX IF NOT EXISTS project_form_drafts_project_id_idx ON project_form_drafts(project_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS project_form_drafts_project_draft_idx ON project_form_drafts(project_id, draft_id);
       CREATE INDEX IF NOT EXISTS project_records_project_id_idx ON project_records(project_id);
       CREATE INDEX IF NOT EXISTS project_records_submitted_at_idx ON project_records(submitted_at);
       CREATE INDEX IF NOT EXISTS project_audit_log_project_id_idx ON project_audit_log(project_id);
       CREATE INDEX IF NOT EXISTS project_audit_log_record_id_idx ON project_audit_log(record_id);
       CREATE INDEX IF NOT EXISTS project_audit_log_changed_at_idx ON project_audit_log(changed_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS project_collaborators_project_user_idx ON project_collaborators(project_id, user_id);
       CREATE INDEX IF NOT EXISTS project_collaborators_project_id_idx ON project_collaborators(project_id);
       CREATE INDEX IF NOT EXISTS project_collaborators_user_id_idx ON project_collaborators(user_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS project_participants_token_idx ON project_participants(token);
       CREATE INDEX IF NOT EXISTS project_participants_project_id_idx ON project_participants(project_id);
       CREATE INDEX IF NOT EXISTS project_participants_submitted_at_idx ON project_participants(submitted_at);
     `);

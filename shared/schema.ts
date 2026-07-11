@@ -1,5 +1,5 @@
 import {
-  pgTable, text, integer, boolean, timestamp, uuid, jsonb, index,
+  pgTable, text, integer, boolean, timestamp, uuid, jsonb, index, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
@@ -154,6 +154,8 @@ export const projectFormDrafts = pgTable("project_form_drafts", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({
   projectIdIdx: index("project_form_drafts_project_id_idx").on(t.projectId),
+  // Ensures each draft_id is unique within a project (matches the UNIQUE constraint in initDB)
+  projectDraftUniq: uniqueIndex("project_form_drafts_project_draft_idx").on(t.projectId, t.draftId),
 }));
 
 // ============================================================
@@ -211,6 +213,8 @@ export const projectCollaborators = pgTable("project_collaborators", {
 }, (t) => ({
   projectIdIdx: index("project_collaborators_project_id_idx").on(t.projectId),
   userIdIdx: index("project_collaborators_user_id_idx").on(t.userId),
+  // Prevents a user from being added as a collaborator on the same project twice
+  projectUserUniq: uniqueIndex("project_collaborators_project_user_idx").on(t.projectId, t.userId),
 }));
 
 // ============================================================
@@ -237,6 +241,8 @@ export const projectParticipants = pgTable("project_participants", {
 }, (t) => ({
   projectIdIdx: index("project_participants_project_id_idx").on(t.projectId),
   submittedAtIdx: index("project_participants_submitted_at_idx").on(t.submittedAt),
+  // Unique invite token — used as the secret URL segment; collision would allow token hijacking
+  tokenUniq: uniqueIndex("project_participants_token_idx").on(t.token),
 }));
 
 // ============================================================
