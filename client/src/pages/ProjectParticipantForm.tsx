@@ -71,14 +71,37 @@ export function ProjectParticipantForm() {
   const reviewStep = formSteps.length;
   const totalSteps = formSteps.length + 1;
 
-  const { register, handleSubmit, watch, setValue, getValues, reset } = useForm<any>({ defaultValues: {} });
+  const { register, handleSubmit, watch, setValue, getValues, reset, trigger, formState: { errors, isDirty } } = useForm<any>({ defaultValues: {}, mode: "onBlur" });
   const formValues = watch();
 
   useEffect(() => {
-    if (formData?.prefillData && Object.keys(formData.prefillData).length > 0) {
+    // إصلاح: لا نستبدل بيانات المستخدم أثناء التعبئة (مثلاً بعد إعادة جلب عبر
+    // visibilitychange) — نطبّق prefillData فقط عند التحميل الأول للنموذج
+    if (formData?.prefillData && Object.keys(formData.prefillData).length > 0 && !isDirty) {
       reset(formData.prefillData);
     }
   }, [formData?.prefillData]);
+
+  /** يبني قواعد التحقق (required/min/max/regex) لحقل معيّن اعتماداً على إعدادات المسؤول */
+  const fieldValidationRules = (f: ProjectField) => {
+    const rules: Record<string, any> = {};
+    if (f.isRequired) {
+      rules.required = isAr ? `${f.label} مطلوب` : `${f.label} is required`;
+    }
+    if (f.fieldType === "email") {
+      rules.pattern = { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: isAr ? "بريد إلكتروني غير صحيح" : "Invalid email" };
+    }
+    if (f.validationRegex) {
+      try {
+        rules.pattern = { value: new RegExp(f.validationRegex), message: f.validationMessage || (isAr ? "قيمة غير صحيحة" : "Invalid value") };
+      } catch { /* regex غير صالح من إعدادات المسؤول — نتجاهله بأمان */ }
+    }
+    if (f.fieldType === "number") {
+      if (f.validationMin !== null && f.validationMin !== undefined) rules.min = { value: f.validationMin, message: f.validationMessage || (isAr ? `القيمة الدنيا ${f.validationMin}` : `Min ${f.validationMin}`) };
+      if (f.validationMax !== null && f.validationMax !== undefined) rules.max = { value: f.validationMax, message: f.validationMessage || (isAr ? `القيمة القصوى ${f.validationMax}` : `Max ${f.validationMax}`) };
+    }
+    return rules;
+  };
 
   // Re-fetch form data when user returns to the tab so the Telegram banner
   // disappears immediately after the participant activates the bot.
@@ -152,8 +175,13 @@ export function ProjectParticipantForm() {
     }
   });
 
-  const goNext = () => {
-    if (step < reviewStep) setStep(s => s + 1);
+  const goNext = async () => {
+    if (step >= reviewStep) return;
+    // إصلاح: التحقق من صحة حقول الخطوة الحالية قبل الانتقال — يمنع تخطي
+    // الحقول المطلوبة أو غير الصحيحة (كان زر "التالي" يتجاوز التحقق سابقاً)
+    const keys = getStepFields(step).map(f => f.key);
+    const valid = keys.length === 0 || await trigger(keys);
+    if (valid) setStep(s => s + 1);
   };
   const goPrev = () => {
     if (step > 0) setStep(s => s - 1);
@@ -170,16 +198,18 @@ export function ProjectParticipantForm() {
       </div>
     );
     const isFullW = f.isFullWidth || ["textarea", "file"].includes(f.fieldType);
+    const fieldError = (errors as any)?.[f.key]?.message as string | undefined;
+    const rules = fieldValidationRules(f);
     return (
       <div key={f.id} className={cn("space-y-1.5", isFullW ? "col-span-2" : "col-span-1")}>
         <Label className="text-xs font-medium text-slate-600 dark:text-slate-400">
           {f.label}{f.isRequired && <span className="text-red-500 mr-0.5">*</span>}
         </Label>
         {f.fieldType === "textarea" ? (
-          <Textarea {...register(f.key)} placeholder={f.placeholder || ""} rows={3} className="text-sm" />
+          <Textarea {...register(f.key, rules)} placeholder={f.placeholder || ""} rows={3} className="text-sm" />
         ) : f.fieldType === "select" || f.fieldType === "radio" ? (
           <select
-            {...register(f.key)}
+            {...register(f.key, rules)}
             className="w-full border border-slate-200 dark:border-slate-600 rounded-md px-3 py-2 text-sm bg-background"
           >
             <option value="">{isAr ? "— اختر —" : "— Select —"}</option>
@@ -189,7 +219,7 @@ export function ProjectParticipantForm() {
           </select>
         ) : f.fieldType === "checkbox" ? (
           <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" {...register(f.key)} id={f.key} className="h-4 w-4 rounded" />
+            <input type="checkbox" {...register(f.key, rules)} id={f.key} className="h-4 w-4 rounded" />
             <Label htmlFor={f.key} className="text-sm cursor-pointer">{f.placeholder || f.label}</Label>
           </div>
         ) : f.fieldType === "file" ? (
@@ -200,16 +230,17 @@ export function ProjectParticipantForm() {
             allowedTypes={f.allowedFileTypes as string[] | null | undefined}
             maxSizeMb={f.maxFileSizeMb ?? undefined}
             value={formValues[f.key] || ""}
-            onChange={(url) => setValue(f.key, url)}
+            onChange={(url) => { setValue(f.key, url, { shouldValidate: true, shouldDirty: true }); }}
           />
         ) : (
           <Input
-            {...register(f.key)}
+            {...register(f.key, rules)}
             type={f.fieldType === "number" ? "number" : f.fieldType === "date" ? "date" : f.fieldType === "email" ? "email" : f.fieldType === "phone" ? "tel" : "text"}
             placeholder={f.placeholder || ""}
             className="text-sm"
           />
         )}
+        {fieldError && <p className="text-[11px] text-red-500 mt-0.5">{fieldError}</p>}
       </div>
     );
   };

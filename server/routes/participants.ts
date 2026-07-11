@@ -171,10 +171,10 @@ router.get("/template", requireAuth, requireParticipantEditAccess, async (req: R
     if (!proj) return res.status(404).json({ error: "المشروع غير موجود" });
 
     // Fetch dynamic project fields
-    const fields = await db.select({ key: projectFields.key, label: projectFields.label, type: projectFields.type })
+    const fields = await db.select({ key: projectFields.key, label: projectFields.label, type: projectFields.fieldType })
       .from(projectFields)
       .where(eq(projectFields.projectId, pid))
-      .orderBy(projectFields.order);
+      .orderBy(projectFields.stepNumber, projectFields.orderIndex);
 
     const wb = new ExcelJS.Workbook();
     wb.creator = "مسارات — Masarat";

@@ -109,19 +109,16 @@ async function runReminderCycle() {
             });
 
             if (!((await resp.json() as any).ok)) {
-              // Telegram rejected — roll back counter so we retry next cycle
-              await pool.query(
-                `UPDATE project_participants SET notify_count = GREATEST(COALESCE(notify_count,0) - 1, 0), last_notified_at = NULL WHERE id = $1`,
-                [p.id]
-              );
+              // إصلاح: عند فشل الإرسال (توكن غير صالح، حظر البوت، إلخ) لا نُصفّر
+              // last_notified_at — فعل ذلك كان يجعل العملية تُعاد كل 30 دقيقة إلى
+              // الأبد دون أن يصل العداد أبداً للحد الأقصى (reminderMaxCount مُتجاوَز
+              // فعلياً). الآن نُبقي الاستهلاك من العداد ونحترم الفاصل الزمني الكامل
+              // قبل إعادة المحاولة، حتى تتوقف المحاولات فعلياً بعد الوصول للحد.
+              console.error(`[scheduler] Telegram send rejected for participant ${p.id} — will retry after next interval, not immediately`);
             }
           } catch (err) {
             console.error(`[scheduler] Telegram reminder failed for participant ${p.id}:`, err);
-            // Roll back claim on error
-            await pool.query(
-              `UPDATE project_participants SET notify_count = GREATEST(COALESCE(notify_count,0) - 1, 0), last_notified_at = NULL WHERE id = $1`,
-              [p.id]
-            );
+            // نفس المنطق: لا نُصفّر last_notified_at كي لا تتكرر المحاولة كل 30 دقيقة
           }
         }
       }
@@ -173,18 +170,12 @@ async function runReminderCycle() {
           });
 
           if (!result.ok) {
-            // Roll back on email failure
-            await pool.query(
-              `UPDATE project_participants SET email_count = GREATEST(COALESCE(email_count,0) - 1, 0), last_emailed_at = NULL WHERE id = $1`,
-              [p.id]
-            );
+            // إصلاح: نفس منطق تيليغرام — لا نُصفّر last_emailed_at عند الفشل
+            // حتى لا يتكرر الفشل كل 30 دقيقة إلى الأبد بدل احترام reminderMaxCount
+            console.error(`[scheduler] Email send failed for participant ${p.id} — will retry after next interval, not immediately: ${result.error || ""}`);
           }
         } catch (err) {
           console.error(`[scheduler] Email reminder failed for participant ${p.id}:`, err);
-          await pool.query(
-            `UPDATE project_participants SET email_count = GREATEST(COALESCE(email_count,0) - 1, 0), last_emailed_at = NULL WHERE id = $1`,
-            [p.id]
-          );
         }
       }
     }
