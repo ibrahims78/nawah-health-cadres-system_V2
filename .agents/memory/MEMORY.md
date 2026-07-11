@@ -20,3 +20,4 @@
 - [Deep audit round 2 fixes](deep-audit-2.md) — race condition in /setup (advisory lock tx), limit/page caps in GET /records, invalid date validation, global rate limiter, draftId UUID validation, timing-safe invite code compare
 - [Deep audit round 3 fixes](deep-audit-3.md) — Zod .max() caps on all schemas, batch ID array caps (500), atomic notifyCount SQL, audit log restricted to editors
 - [Deep audit round 4 fixes](deep-audit-4.md) — last-admin demotion guard, register-invite tx+advisory-lock, unique indexes (fields key + records seq), scheduler LIMIT, SMTP CRLF, change-password rate-limit+session-invalidation
+- [Deep audit round 5 fixes](deep-audit-5.md) — safeHref XSS guard, FK onDelete SET NULL, form-draft email index, dead remember-me token removed, symlink escape blocked in file serving

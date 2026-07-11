@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync, createReadStream } from "fs";
-import { stat } from "fs/promises";
+import { stat, lstat } from "fs/promises";
 import { pool } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import projectsRoutes from "./routes/projects.js";
@@ -198,7 +198,16 @@ app.get("/uploads/*", async (req, res) => {
   }
 
   try {
-    await stat(filePath);
+    // F5: Use lstat (does NOT follow symlinks) to detect symlink escape.
+    // A symlink inside uploads/ could point outside the directory, bypassing
+    // the startsWith(uploadsRoot) path-traversal guard above.
+    const fileStats = await lstat(filePath);
+    if (fileStats.isSymbolicLink()) {
+      return res.status(400).json({ error: "مسار غير مسموح" });
+    }
+    if (!fileStats.isFile()) {
+      return res.status(404).json({ error: "الملف غير موجود" });
+    }
   } catch {
     return res.status(404).json({ error: "الملف غير موجود" });
   }
@@ -505,6 +514,8 @@ async function initDB() {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS project_fields_project_id_idx ON project_fields(project_id);
       CREATE INDEX IF NOT EXISTS project_form_drafts_project_id_idx ON project_form_drafts(project_id);
+      -- F3: Index email column — used in every scheduler reminder-cycle scan
+      CREATE INDEX IF NOT EXISTS project_form_drafts_email_idx ON project_form_drafts(email);
       CREATE UNIQUE INDEX IF NOT EXISTS project_form_drafts_project_draft_idx ON project_form_drafts(project_id, draft_id);
       CREATE INDEX IF NOT EXISTS project_records_project_id_idx ON project_records(project_id);
       CREATE INDEX IF NOT EXISTS project_records_submitted_at_idx ON project_records(submitted_at);

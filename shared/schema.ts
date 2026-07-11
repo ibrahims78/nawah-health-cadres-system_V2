@@ -27,7 +27,8 @@ export const userInvitations = pgTable("user_invitations", {
   email: text("email").notNull(),
   role: text("role").notNull().default("viewer"),
   inviteToken: text("invite_token").unique().notNull(),
-  invitedBy: uuid("invited_by").references(() => users.id),
+  // F2: SET NULL so deleting a user doesn't block the operation (RESTRICT default)
+  invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -59,7 +60,8 @@ export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   description: text("description"),
-  createdBy: uuid("created_by").references(() => users.id),
+  // F2: SET NULL so deleting a user doesn't orphan or block project deletion
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   // Form settings
   invitationCode: text("invitation_code").notNull().default("PROJECT-2026"),
@@ -155,7 +157,9 @@ export const projectFormDrafts = pgTable("project_form_drafts", {
   lastReminderAt: timestamp("last_reminder_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({
-  projectIdIdx: index("project_form_drafts_project_id_idx").on(t.projectId),
+  projectIdIdx:   index("project_form_drafts_project_id_idx").on(t.projectId),
+  // F3: Index email — scheduler queries this column on every reminder cycle
+  emailIdx:       index("project_form_drafts_email_idx").on(t.email),
   // Ensures each draft_id is unique within a project (matches the UNIQUE constraint in initDB)
   projectDraftUniq: uniqueIndex("project_form_drafts_project_draft_idx").on(t.projectId, t.draftId),
 }));
@@ -209,7 +213,8 @@ export const projectCollaborators = pgTable("project_collaborators", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  grantedBy: uuid("granted_by").references(() => users.id),
+  // F2: SET NULL on grantor deletion — collaborator record stays, grantor reference nulled
+  grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
   /** "edit"  — content only (records/fields/uploads); cannot delete project or change settings.
    *  "full"  — equivalent to project owner; all operations including settings & delete. */
   permission: text("permission").notNull().default("edit"),

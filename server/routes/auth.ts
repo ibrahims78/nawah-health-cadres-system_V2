@@ -139,15 +139,17 @@ router.post("/login", loginLimiter, async (req: Request, res: Response) => {
       (req.session as any).fullName = user.fullName;
 
       if (rememberMe) {
+        // F4: Session-based persistence — extend the session cookie TTL to 30 days.
+        // The rememberMeToken (previously generated and stored) was dead code: it was
+        // written to the DB but never read back by any middleware or route, so it gave
+        // no actual benefit. Removing it eliminates an unnecessary DB write and avoids
+        // storing a token that can't be revoked. Long-lived persistence is achieved
+        // purely through the session store TTL, which IS enforced on every request.
         req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-        const rawToken = uuidv4();
-        // H-04: Store SHA-256 hash of the token, not the raw value
-        const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         db.update(users)
-          .set({ rememberMeToken: tokenHash, rememberMeExpiresAt: expiresAt, lastLoginAt: new Date() })
+          .set({ lastLoginAt: new Date() })
           .where(eq(users.id, user.id))
-          .catch((e) => console.error("[ERROR] rememberMe update:", e));
+          .catch((e) => console.error("[ERROR] lastLoginAt update:", e));
       } else {
         db.update(users)
           .set({ lastLoginAt: new Date() })

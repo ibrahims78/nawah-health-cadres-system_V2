@@ -25,6 +25,16 @@ const SYNC_BADGE: Record<string, { icon: string; cls: string; label: string; lab
   sync_failed: { icon: "🔴", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",           label: "فشلت المزامنة", labelEn: "Sync Failed" },
 };
 
+// F1: Whitelist-based href sanitizer — prevents javascript:/data:/vbscript: URL injection.
+// Only http/https and server-relative paths (/uploads/…) are allowed.
+// Any other scheme is replaced with "#" so the anchor is inert.
+function safeHref(url: string | null | undefined): string {
+  if (!url) return "#";
+  const s = String(url).trim();
+  if (/^https?:\/\//i.test(s) || s.startsWith("/") || s.startsWith("./")) return s;
+  return "#";
+}
+
 export function ProjectRecordDetails() {
   const { id, recordId } = useParams<{ id: string; recordId: string }>();
   const [, nav] = useLocation();
@@ -173,7 +183,7 @@ export function ProjectRecordDetails() {
                             <p className="text-[11px] text-muted-foreground font-medium">{f.label}</p>
                             {f.fieldType === "file" && !isEmpty ? (
                               <a
-                                href={String(val)}
+                                href={safeHref(String(val))}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-sm font-medium text-primary hover:underline flex items-center gap-1.5"
@@ -247,7 +257,7 @@ export function ProjectRecordDetails() {
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {isLocal && (
-                            <a href={val} target="_blank" rel="noopener noreferrer">
+                            <a href={safeHref(val)} target="_blank" rel="noopener noreferrer">
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
                                 <ExternalLink className="h-3 w-3" />
                                 {isAr ? "محلي" : "Local"}
@@ -255,7 +265,7 @@ export function ProjectRecordDetails() {
                             </a>
                           )}
                           {(isDrive || df?.driveUrl) && (
-                            <a href={df?.driveUrl || displayUrl} target="_blank" rel="noopener noreferrer">
+                            <a href={safeHref(df?.driveUrl || displayUrl)} target="_blank" rel="noopener noreferrer">
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-green-600 border-green-300">
                                 <ExternalLink className="h-3 w-3" />
                                 Drive
