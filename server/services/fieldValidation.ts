@@ -91,12 +91,25 @@ export async function validateAndSanitizeSubmission(
 
     if (f.validationRegex) {
       try {
-        const re = new RegExp(f.validationRegex);
-        if (!re.test(String(value))) {
+        // E6: Guard against ReDoS — execute the admin-supplied regex inside a V8 VM
+        // context with a hard timeout so a catastrophic pattern (e.g. (a+)+$) cannot
+        // block Node.js's event loop. The result is `false` on timeout, which is
+        // treated as a validation failure (same as an ordinary non-match).
+        const { createContext, runInContext } = await import("node:vm");
+        let matched = false;
+        try {
+          const ctx = createContext({ pattern: f.validationRegex, val: String(value), result: false });
+          runInContext("result = new RegExp(pattern).test(val)", ctx, { timeout: 200 });
+          matched = ctx.result as boolean;
+        } catch {
+          // Timeout (ReDoS) or invalid regex syntax — treat as non-match (validation fail)
+          matched = false;
+        }
+        if (!matched) {
           return { ok: false, data: sanitized, error: f.validationMessage || (isAr ? `${f.label}: قيمة غير صحيحة` : `${f.label}: invalid value`) };
         }
       } catch {
-        // Invalid regex saved by an admin — ignore safely, same as the client does.
+        // Outer catch: unexpected errors — ignore safely, same as the client does.
       }
     }
   }

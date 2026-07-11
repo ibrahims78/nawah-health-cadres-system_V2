@@ -167,7 +167,14 @@ router.post("/login", loginLimiter, async (req: Request, res: Response) => {
 
 // ── Logout ────────────────────────────────────────────────────
 router.post("/logout", (req: Request, res: Response) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  req.session.destroy(() => {
+    // E4: Explicitly clear the session cookie from the browser.
+    // req.session.destroy() removes the server-side record but does NOT instruct
+    // the browser to delete its cookie — the orphaned cookie persists until maxAge
+    // expires (24 h). clearCookie sends Set-Cookie with maxAge=0, expiring it now.
+    res.clearCookie("connect.sid");
+    res.json({ ok: true });
+  });
 });
 
 // ── Current user ──────────────────────────────────────────────

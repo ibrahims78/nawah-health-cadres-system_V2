@@ -568,29 +568,77 @@ router.post("/:id/fields", requireEditorOrAdmin, requireProjectEditAccess, async
 
 router.get("/:id/records", requireAuth, requireProjectReadAccess, async (req: Request, res: Response) => {
   try {
-    // Cap page and limit to prevent memory exhaustion from huge in-memory slices
     const page  = Math.min(Math.max(parseInt(req.query.page  as string) || 1, 1), 10_000);
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 500);
     const offset = (page - 1) * limit;
-    const search = (req.query.search as string) || "";
+    const search   = (req.query.search as string) || "";
 
+    // Validate date params early — before any DB query
+    const dateFrom = req.query.dateFrom as string | undefined;
+    const dateTo   = req.query.dateTo   as string | undefined;
+    let fromDate: Date | undefined;
+    let toDate: Date | undefined;
+    if (dateFrom) {
+      fromDate = new Date(dateFrom);
+      if (isNaN(fromDate.getTime())) return res.status(400).json({ error: "تنسيق تاريخ البداية غير صالح" });
+    }
+    if (dateTo) {
+      toDate = new Date(dateTo);
+      if (isNaN(toDate.getTime())) return res.status(400).json({ error: "تنسيق تاريخ النهاية غير صالح" });
+      toDate.setHours(23, 59, 59, 999);
+    }
+
+    const pid = String(req.params.id);
+    const hasSearch      = search.length > 0;
+    const hasFieldFilter = Object.keys(req.query).some(k => k.startsWith("filter_"));
+
+    // ── Fast path: no JS-side JSONB filtering ─────────────────────────────────
+    // Push limit/offset and date bounds entirely to the database so we never
+    // load thousands of rows into Node.js memory just to discard most of them.
+    if (!hasSearch && !hasFieldFilter) {
+      const whereClause = and(
+        eq(projectRecords.projectId, pid),
+        fromDate ? gte(projectRecords.submittedAt, fromDate) : undefined,
+        toDate   ? sql`${projectRecords.submittedAt} <= ${toDate}` : undefined,
+      );
+      const [[{ total }], data] = await Promise.all([
+        db.select({ total: count() }).from(projectRecords).where(whereClause),
+        db.select().from(projectRecords).where(whereClause)
+          .orderBy(desc(projectRecords.submittedAt))
+          .limit(limit)
+          .offset(offset),
+      ]);
+      return res.json({ data, total: Number(total), page, limit });
+    }
+
+    // ── Slow path: JSONB search/filter requires client-side matching ───────────
+    // Cap the DB fetch at 10 000 rows to prevent OOM on very large projects.
+    // Searches that exceed this cap will show a reduced result set — acceptable
+    // given that UI search is meant for interactive drill-down, not bulk export.
+    const MAX_FETCH = 10_000;
+    const sqlWhere = and(
+      eq(projectRecords.projectId, pid),
+      fromDate ? gte(projectRecords.submittedAt, fromDate) : undefined,
+      toDate   ? sql`${projectRecords.submittedAt} <= ${toDate}` : undefined,
+    );
     let allRecords = await db.select().from(projectRecords)
-      .where(eq(projectRecords.projectId, String(req.params.id)))
-      .orderBy(desc(projectRecords.submittedAt));
+      .where(sqlWhere)
+      .orderBy(desc(projectRecords.submittedAt))
+      .limit(MAX_FETCH);
 
-    // Full-text search
-    if (search) {
+    // Full-text search across all JSONB data values
+    if (hasSearch) {
       const s = search.toLowerCase();
       allRecords = allRecords.filter(r => {
-        const data = r.data as Record<string, any>;
-        return Object.values(data).some(v => String(v || "").toLowerCase().includes(s));
+        const d = r.data as Record<string, any>;
+        return Object.values(d).some(v => String(v ?? "").toLowerCase().includes(s));
       });
     }
 
-    // Field-level filters: filter_<key>=value
+    // Field-level filters: filter_<key>=value (on JSONB data)
     for (const [qKey, qVal] of Object.entries(req.query)) {
       if (!qKey.startsWith("filter_") || !qVal) continue;
-      const fieldKey = qKey.slice(7);
+      const fieldKey  = qKey.slice(7);
       const filterVal = String(qVal).toLowerCase();
       allRecords = allRecords.filter(r => {
         const d = r.data as Record<string, any>;
@@ -598,23 +646,8 @@ router.get("/:id/records", requireAuth, requireProjectReadAccess, async (req: Re
       });
     }
 
-    // Date range filter on submittedAt — validate before use to prevent silent filter skip
-    const dateFrom = req.query.dateFrom as string;
-    const dateTo   = req.query.dateTo   as string;
-    if (dateFrom) {
-      const from = new Date(dateFrom);
-      if (isNaN(from.getTime())) return res.status(400).json({ error: "تنسيق تاريخ البداية غير صالح" });
-      allRecords = allRecords.filter(r => r.submittedAt && r.submittedAt >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo);
-      if (isNaN(to.getTime())) return res.status(400).json({ error: "تنسيق تاريخ النهاية غير صالح" });
-      to.setHours(23, 59, 59, 999);
-      allRecords = allRecords.filter(r => r.submittedAt && r.submittedAt <= to);
-    }
-
     const total = allRecords.length;
-    const data = allRecords.slice(offset, offset + limit);
+    const data  = allRecords.slice(offset, offset + limit);
     res.json({ data, total, page, limit });
   } catch (err: any) {
     handleError(res, err);
@@ -1137,10 +1170,39 @@ router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectEditAcc
 });
 
 router.post("/test-email", requireEditorOrAdmin, async (req: Request, res: Response) => {
-  const { host, port, user, pass } = req.body;
-  const result = await testEmailConnection(
-    host || user || pass ? { host, port: Number(port) || 587, user, pass } : undefined
-  );
+  // E3: Validate SMTP parameters — raw req.body passed to testEmailConnection previously,
+  // allowing garbage types (arrays, objects) that could crash the transporter.
+  const raw = req.body;
+  const hasCustom = raw.host || raw.user || raw.pass;
+  if (hasCustom) {
+    const hostVal = raw.host;
+    const portVal = raw.port;
+    const userVal = raw.user;
+    const passVal = raw.pass;
+    if (typeof hostVal !== "string" || hostVal.length > 255) {
+      return res.status(400).json({ error: "قيمة host غير صالحة" });
+    }
+    if (portVal !== undefined) {
+      const n = Number(portVal);
+      if (!Number.isInteger(n) || n < 1 || n > 65535) {
+        return res.status(400).json({ error: "رقم المنفذ يجب أن يكون بين 1 و 65535" });
+      }
+    }
+    if (userVal !== undefined && (typeof userVal !== "string" || userVal.length > 255)) {
+      return res.status(400).json({ error: "قيمة user غير صالحة" });
+    }
+    if (passVal !== undefined && (typeof passVal !== "string" || passVal.length > 500)) {
+      return res.status(400).json({ error: "قيمة pass غير صالحة" });
+    }
+    const result = await testEmailConnection({
+      host: hostVal,
+      port: Number(raw.port) || 587,
+      user: userVal,
+      pass: passVal,
+    });
+    return res.json(result);
+  }
+  const result = await testEmailConnection(undefined);
   res.json(result);
 });
 
@@ -1203,6 +1265,11 @@ router.post("/reset-password/:userId", requireAdmin, resetPwdLimiter, async (req
   try {
     const bcrypt = await import("bcryptjs");
     const { password } = req.body;
+    // E2: Validate before hashing — bcrypt.hash(undefined) throws; bcrypt.hash("", 12)
+    // produces a valid hash of an empty string which must never reach the DB.
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return res.status(400).json({ error: "كلمة المرور يجب أن تكون 8 أحرف على الأقل" });
+    }
     const targetId = String(req.params.userId);
     const hash = await bcrypt.default.hash(password, 12);
     await db.update(users).set({ passwordHash: hash, mustChangePassword: true }).where(eq(users.id, targetId));

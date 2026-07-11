@@ -944,6 +944,11 @@ router.post("/telegram-webhook", webhookLimiter, async (req: Request, res: Respo
             replyText = formLink
               ? `✅ <b>أنت مسجَّل بالفعل!</b>\n\nأهلاً <b>${participant.name}</b> — تسجيلك في <b>${proj.name}</b> مكتمل.\n\n✏️ <a href="${formLink}">اضغط هنا إذا أردت تعديل بياناتك</a>`
               : `✅ <b>أنت مسجَّل بالفعل!</b>\n\nأهلاً <b>${participant.name}</b> — تسجيلك في <b>${proj.name}</b> مكتمل.`;
+          } else if (participant.telegramChatId && participant.telegramChatId !== chatId) {
+            // ── E5: الحالة: التوكن مرتبط بحساب Telegram مختلف ──────────
+            // لا نكشف أي معلومات عن صاحب التوكن — نرفض بصمت دون تفاصيل.
+            // لا نحدِّث chatId لأن ذلك سيؤدي إلى اختطاف الربط من الحساب الأصلي.
+            replyText = "⚠️ هذا الرابط مرتبط بحساب Telegram آخر ولا يمكن استخدامه من هنا.";
           } else if (participant.telegramChatId && participant.telegramChatId === chatId) {
             // ── الحالة: إعادة تفعيل البوت (كان مرتبطاً من قبل) ────────
             replyText = formLink
