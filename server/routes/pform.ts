@@ -11,6 +11,8 @@ import rateLimit from "express-rate-limit";
 import { fileUpload, publicFileUrl, validateMimeType, validateFieldRestrictions, organizeUploadedFile } from "../middleware/upload.js";
 import { handleError } from "../utils/errorHandler.js";
 import { storeChatForProject } from "../services/telegramChatCache.js";
+import { validateAndSanitizeSubmission } from "../services/fieldValidation.js";
+import { getTrustedBaseUrl } from "../utils/baseUrl.js";
 
 const router = Router();
 
@@ -193,6 +195,13 @@ router.post("/:projectId/submit", submitLimiter, async (req: Request, res: Respo
       return res.status(401).json({ error: "يجب التحقق من رمز الدعوة أولاً" });
     }
 
+    // Server-side enforcement of the same rules the public form applies client-side:
+    // strict allowlist of defined field keys, auto-clearing of conditionally-hidden
+    // fields, and required/email/min-max/regex validation — protects direct API calls.
+    const validation = await validateAndSanitizeSubmission(pid, req.body);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+    const submittedData = validation.data;
+
     const [proj] = await db.select({
       editTokenHours: projects.editTokenHours,
       name: projects.name,
@@ -210,7 +219,7 @@ router.post("/:projectId/submit", submitLimiter, async (req: Request, res: Respo
     const autoIncrementKeys = autoFields.map(f => f.key);
 
     // Atomically assign sequential number and insert (advisory lock prevents duplicates)
-    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt, autoIncrementKeys);
+    const record = await insertRecordAtomic(pid, submittedData, tokenExpiresAt, autoIncrementKeys);
     const seqNum = record.sequential_number;
     const finalData = record.enriched_data; // includes auto-filled autoincrement values
 
@@ -322,13 +331,16 @@ router.patch("/:projectId/edit/:token", async (req: Request, res: Response) => {
       return res.status(410).json({ error: "انتهت صلاحية رابط التعديل" });
     }
 
+    const validation = await validateAndSanitizeSubmission(pid, req.body);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
     // Strip autoincrement + read-only fields — immutable after creation; restore from existing record
     const lockedFields = await db.select({ key: projectFields.key }).from(projectFields)
       .where(and(
         eq(projectFields.projectId, pid),
         sql`(${projectFields.fieldType} = 'autoincrement' OR ${projectFields.isReadOnly} = TRUE)`,
       ));
-    const safeBody: Record<string, any> = { ...req.body };
+    const safeBody: Record<string, any> = { ...validation.data };
     for (const { key } of lockedFields) {
       if (key in (existing.data as any)) {
         safeBody[key] = (existing.data as any)[key];
@@ -509,7 +521,7 @@ router.get("/:projectId/p/:token", async (req: Request, res: Response) => {
       try {
         const botTok = decrypt(proj.telegramBotTokenEnc);
         if (botTok) {
-          const r = await fetch(`https://api.telegram.org/bot${botTok}/getMe`);
+          const r = await fetch(`https://api.telegram.org/bot${botTok}/getMe`, { signal: AbortSignal.timeout(5000) });
           const d = await r.json() as any;
           if (d.ok && d.result?.username) botUsername = d.result.username;
         }
@@ -571,6 +583,9 @@ router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, r
     const parsed = submitFormSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
+    const validation = await validateAndSanitizeSubmission(pid, req.body);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
     const editHours = proj.participantEditHours ?? proj.editTokenHours ?? 48;
     const tokenExpiresAt = new Date(Date.now() + editHours * 60 * 60 * 1000);
 
@@ -580,7 +595,7 @@ router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, r
 
     // إصلاح: ربط المشارك بالسجل داخل نفس الـ transaction لمنع سجلات يتيمة
     // إذا فشل تحديث المشارك، يُلغى إدخال السجل تلقائياً
-    const record = await insertRecordAtomic(pid, req.body, tokenExpiresAt, autoIncrementKeys,
+    const record = await insertRecordAtomic(pid, validation.data, tokenExpiresAt, autoIncrementKeys,
       async (client, recordId) => {
         const { rowCount } = await client.query(
           `UPDATE project_participants SET record_id = $1, submitted_at = NOW() WHERE id = $2`,
@@ -613,12 +628,7 @@ router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, r
       participant.identifierType === "email" &&
       participant.identifier
     ) {
-      const baseUrlForEmail = (() => {
-        const domains = process.env.REPLIT_DOMAINS?.split(",");
-        if (domains?.length) return `https://${domains[0].trim()}`;
-        if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-        return "";
-      })();
+      const baseUrlForEmail = getTrustedBaseUrl(req);
       if (baseUrlForEmail) {
         const editLink = `${baseUrlForEmail}/p/${pid}/p/${token}`;
         sendParticipantConfirmationEmail({
@@ -628,6 +638,8 @@ router.post("/:projectId/p/:token/submit", submitLimiter, async (req: Request, r
           editLink,
           editDeadlineIso: tokenExpiresAt.toISOString(),
         }).catch(console.error);
+      } else {
+        console.error(`[pform] تخطّي إرسال بريد التأكيد للمشارك ${participant.id} — تعذّر تحديد رابط أساسي موثوق (اضبط APP_URL).`);
       }
     }
 
@@ -682,10 +694,13 @@ router.patch("/:projectId/p/:token/edit", submitLimiter, async (req: Request, re
     const parsed = submitFormSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
+    const validation = await validateAndSanitizeSubmission(pid, req.body);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
     // Strip autoincrement + read-only fields
     const lockedFields = await db.select({ key: projectFields.key }).from(projectFields)
       .where(and(eq(projectFields.projectId, pid), sql`(${projectFields.fieldType} = 'autoincrement' OR ${projectFields.isReadOnly} = TRUE)`));
-    const safeBody: Record<string, any> = { ...req.body };
+    const safeBody: Record<string, any> = { ...validation.data };
     for (const { key } of lockedFields) {
       if (key in (existing.data as any)) safeBody[key] = (existing.data as any)[key];
       else delete safeBody[key];
@@ -756,12 +771,7 @@ router.post("/telegram-webhook", async (req: Request, res: Response) => {
       const [proj] = await db.select({ telegramBotTokenEnc: projects.telegramBotTokenEnc, name: projects.name })
         .from(projects).where(eq(projects.id, participant.projectId));
 
-      const domains = process.env.REPLIT_DOMAINS?.split(",");
-      const baseUrl = domains?.length
-        ? `https://${domains[0].trim()}`
-        : process.env.REPLIT_DEV_DOMAIN
-          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-          : "";
+      const baseUrl = getTrustedBaseUrl(req);
       const formLink = baseUrl ? `${baseUrl}/p/${participant.projectId}/p/${token}` : null;
 
       if (proj?.telegramBotTokenEnc) {

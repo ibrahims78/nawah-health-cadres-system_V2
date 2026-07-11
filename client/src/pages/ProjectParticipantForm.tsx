@@ -82,6 +82,18 @@ export function ProjectParticipantForm() {
     }
   }, [formData?.prefillData]);
 
+  // إصلاح: عندما يصبح حقل مخفياً بسبب عدم تحقق شرطه، نمسح قيمته المخزَّنة —
+  // بدل الاحتفاظ بقيمة قديمة قد تُرسَل لاحقاً رغم أن الحقل لم يعد ظاهراً للمستخدم.
+  useEffect(() => {
+    for (const f of fields) {
+      if (f.fieldType === "heading") continue;
+      if (!checkFieldVisible(f as any, formValues) && formValues[f.key] !== undefined && formValues[f.key] !== "") {
+        setValue(f.key, "");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(formValues), fields]);
+
   /** يبني قواعد التحقق (required/min/max/regex) لحقل معيّن اعتماداً على إعدادات المسؤول */
   const fieldValidationRules = (f: ProjectField) => {
     const rules: Record<string, any> = {};

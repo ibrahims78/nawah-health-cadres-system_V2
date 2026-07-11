@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
 import {
-  projects, projectParticipants, projectRecords, projectFields,
+  projects, projectParticipants, projectRecords, projectFields, projectAuditLog,
   insertParticipantSchema, updateParticipantSchema,
 } from "../../shared/schema.js";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
@@ -10,6 +10,7 @@ import { handleError } from "../utils/errorHandler.js";
 import { decrypt } from "../services/crypto.js";
 import { notifyParticipant, getBotUsername } from "../services/telegram.js";
 import { sendParticipantInviteEmail } from "../services/email.js";
+import { getTrustedBaseUrl } from "../utils/baseUrl.js";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { Readable } from "stream";
@@ -17,20 +18,22 @@ import { Readable } from "stream";
 const router = Router({ mergeParams: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-/** رابط التطبيق المُوثوق — يعتمد على متغيرات البيئة وليس على هيدرز الطلب */
-function getTrustedBaseUrl(req: Request): string {
-  const domains = process.env.REPLIT_DOMAINS?.split(",");
-  if (domains?.length) return `https://${domains[0].trim()}`;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  // Fallback آمن للبيئة المحلية فقط — لن يُستخدم في الإنتاج
-  const host = req.get("host") || "localhost:5000";
-  return `http://${host}`;
-}
-
 /** تحقق بسيط من صيغة البريد الإلكتروني */
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
+
+/** هوية المستخدم الإداري الحالي لتسجيلها في سجل التدقيق */
+function currentActor(req: Request): string {
+  const userId = (req.session as any)?.userId;
+  return userId ? `admin:${userId}` : "admin";
+}
+
+/** تأخير بسيط بين رسائل الدفعة — يتجنب تجاوز حدود Telegram (~30 رسالة/ثانية) أو SMTP */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+const BATCH_SEND_DELAY_MS = 60;
 
 // ─── Access Guards (copied pattern from projects.ts) ─────────
 import { projectCollaborators } from "../../shared/schema.js";
@@ -83,6 +86,8 @@ function getStatus(p: {
 }
 
 // ─── GET /api/projects/:id/participants ──────────────────────
+// دعم اختياري لصفحات (page/pageSize) وبحث/تصفية على الخادم — إذا لم تُمرَّر
+// معاملات pagination، تُعاد كل القائمة كما في السابق (توافق خلفي مع أي استدعاء قديم).
 router.get("/", requireAuth, requireParticipantReadAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
@@ -97,13 +102,37 @@ router.get("/", requireAuth, requireParticipantReadAccess, async (req: Request, 
       .where(eq(projectParticipants.projectId, pid))
       .orderBy(desc(projectParticipants.addedAt));
 
-    const result = list.map(p => ({
+    let result = list.map(p => ({
       ...p,
       status: getStatus({ firstOpenedAt: p.firstOpenedAt, submittedAt: p.submittedAt, participantEditHours: editHours }),
       participantLink: `/p/${pid}/p/${p.token}`,
     }));
 
-    res.json(result);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
+    const status = typeof req.query.status === "string" ? req.query.status : "";
+    if (search) {
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(search) ||
+        (p.identifier || "").toLowerCase().includes(search)
+      );
+    }
+    if (status && status !== "all") {
+      result = result.filter(p => p.status === status);
+    }
+
+    const paginated = req.query.page !== undefined || req.query.pageSize !== undefined;
+    if (!paginated) {
+      // No pagination requested — preserve legacy shape (plain array).
+      return res.json(result);
+    }
+
+    const total = result.length;
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize ?? "25"), 10) || 25));
+    const start = (page - 1) * pageSize;
+    const items = result.slice(start, start + pageSize);
+
+    res.json({ items, total, page, pageSize });
   } catch (err: any) { handleError(res, err); }
 });
 
@@ -157,6 +186,14 @@ router.post("/", requireAuth, requireParticipantEditAccess, async (req: Request,
       prefillData: prefillData || {},
       notes: notes || null,
     }).returning();
+
+    await db.insert(projectAuditLog).values({
+      projectId: pid,
+      recordId: null,
+      changedBy: currentActor(req),
+      action: "create",
+      changesJson: { entity: "participant", participantId: p.id, name: p.name },
+    });
 
     res.json({ ok: true, participant: { ...p, status: "unopened", participantLink: `/p/${pid}/p/${p.token}` } });
   } catch (err: any) { handleError(res, err); }
@@ -405,6 +442,16 @@ router.post("/import", requireAuth, requireParticipantEditAccess, upload.single(
       added++;
     }
 
+    if (added > 0 || updated > 0) {
+      await db.insert(projectAuditLog).values({
+        projectId: pid,
+        recordId: null,
+        changedBy: currentActor(req),
+        action: "import",
+        changesJson: { entity: "participant", added, updated, skipped },
+      });
+    }
+
     res.json({ ok: true, added, updated, skipped, errors: errors.slice(0, 20) });
   } catch (err: any) { handleError(res, err); }
 });
@@ -456,15 +503,7 @@ router.get("/export", requireAuth, requireParticipantReadAccess, async (req: Req
         firstOpenedAt: p.firstOpenedAt ? p.firstOpenedAt.toLocaleString("ar-SY") : "",
         submittedAt: p.submittedAt ? p.submittedAt.toLocaleString("ar-SY") : "",
         hasTelegram: p.telegramChatId ? "✓ نعم" : "✗ لا",
-        participantLink: (() => {
-          const domains = process.env.REPLIT_DOMAINS?.split(",");
-          const base = domains?.length
-            ? `https://${domains[0].trim()}`
-            : process.env.REPLIT_DEV_DOMAIN
-              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-              : `${req.protocol}://${req.get("host")}`;
-          return `${base}/p/${pid}/p/${p.token}`;
-        })(),
+        participantLink: `${getTrustedBaseUrl(req)}/p/${pid}/p/${p.token}`,
         notes: p.notes || "",
       });
     }
@@ -477,14 +516,39 @@ router.get("/export", requireAuth, requireParticipantReadAccess, async (req: Req
 });
 
 // ─── POST /api/projects/:id/participants/bulk-delete ─────────
+// إذا كان لدى بعض المشاركين المحددين سجل بيانات مُرسَل (recordId)، يُطلب تأكيد
+// صريح (force:true) قبل الحذف — لتفادي حذف بيانات تسجيل فعلية بالخطأ.
 router.post("/bulk-delete", requireAuth, requireParticipantEditAccess, async (req: Request, res: Response) => {
   try {
     const pid = String(req.params.id);
-    const { ids } = req.body;
+    const { ids, force } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "لم يتم تحديد مشاركين" });
+
+    const targets = await db.select({ id: projectParticipants.id, recordId: projectParticipants.recordId, name: projectParticipants.name })
+      .from(projectParticipants)
+      .where(and(eq(projectParticipants.projectId, pid), inArray(projectParticipants.id, ids)));
+
+    const withRecords = targets.filter(t => t.recordId);
+    if (withRecords.length > 0 && !force) {
+      return res.status(409).json({
+        error: `${withRecords.length} من المشاركين المحددين لديهم بيانات تسجيل مُرسَلة بالفعل — تأكيد الحذف سيحذف بيانات التسجيل الخاصة بهم أيضاً من قائمة المشاركين (لا يحذف السجل نفسه من جدول البيانات، لكن الرابط بينهما سيُفقد).`,
+        needsConfirmation: true,
+        withRecordsCount: withRecords.length,
+      });
+    }
+
     await db.delete(projectParticipants)
       .where(and(eq(projectParticipants.projectId, pid), inArray(projectParticipants.id, ids)));
-    res.json({ ok: true });
+
+    await db.insert(projectAuditLog).values({
+      projectId: pid,
+      recordId: null,
+      changedBy: currentActor(req),
+      action: "delete",
+      changesJson: { entity: "participant", deletedIds: targets.map(t => t.id), deletedNames: targets.map(t => t.name), withSubmittedRecords: withRecords.length },
+    });
+
+    res.json({ ok: true, deleted: targets.length });
   } catch (err: any) { handleError(res, err); }
 });
 
@@ -514,7 +578,8 @@ router.post("/notify-all", requireAuth, requireParticipantEditAccess, async (req
       ));
 
     let sent = 0, failed = 0;
-    for (const p of targets) {
+    for (let i = 0; i < targets.length; i++) {
+      const p = targets[i];
       const result = await notifyParticipant(botToken, p.telegramChatId!, String(message));
       if (result.ok) {
         sent++;
@@ -523,6 +588,7 @@ router.post("/notify-all", requireAuth, requireParticipantEditAccess, async (req
           notifyCount: (p.notifyCount ?? 0) + 1,
         }).where(eq(projectParticipants.id, p.id));
       } else { failed++; }
+      if (i < targets.length - 1) await sleep(BATCH_SEND_DELAY_MS);
     }
 
     res.json({ ok: true, sent, failed });
@@ -549,7 +615,8 @@ router.post("/notify-batch", requireAuth, requireParticipantEditAccess, async (r
       .where(and(eq(projectParticipants.projectId, pid), inArray(projectParticipants.id, ids)));
 
     let sent = 0, failed = 0, noTelegram = 0;
-    for (const p of targets) {
+    for (let i = 0; i < targets.length; i++) {
+      const p = targets[i];
       if (!p.telegramChatId) { noTelegram++; continue; }
       const result = await notifyParticipant(botToken, p.telegramChatId, String(message));
       if (result.ok) {
@@ -559,6 +626,7 @@ router.post("/notify-batch", requireAuth, requireParticipantEditAccess, async (r
           notifyCount: (p.notifyCount ?? 0) + 1,
         }).where(eq(projectParticipants.id, p.id));
       } else { failed++; }
+      if (i < targets.length - 1) await sleep(BATCH_SEND_DELAY_MS);
     }
 
     res.json({ ok: true, sent, failed, noTelegram });
@@ -623,6 +691,14 @@ router.patch("/:pid", requireAuth, requireParticipantEditAccess, async (req: Req
     const [updated] = await db.update(projectParticipants).set(update)
       .where(eq(projectParticipants.id, participantId)).returning();
 
+    await db.insert(projectAuditLog).values({
+      projectId,
+      recordId: null,
+      changedBy: currentActor(req),
+      action: "update",
+      changesJson: { entity: "participant", participantId, changes: update },
+    });
+
     const [proj] = await db.select({ participantEditHours: projects.participantEditHours })
       .from(projects).where(eq(projects.id, projectId));
     const editHours = proj?.participantEditHours ?? 48;
@@ -636,8 +712,23 @@ router.delete("/:pid", requireAuth, requireParticipantEditAccess, async (req: Re
   try {
     const projectId = String(req.params.id);
     const participantId = String(req.params.pid);
+
+    const [existing] = await db.select({ id: projectParticipants.id, name: projectParticipants.name })
+      .from(projectParticipants)
+      .where(and(eq(projectParticipants.id, participantId), eq(projectParticipants.projectId, projectId)));
+    if (!existing) return res.status(404).json({ error: "المشارك غير موجود" });
+
     await db.delete(projectParticipants)
       .where(and(eq(projectParticipants.id, participantId), eq(projectParticipants.projectId, projectId)));
+
+    await db.insert(projectAuditLog).values({
+      projectId,
+      recordId: null,
+      changedBy: currentActor(req),
+      action: "delete",
+      changesJson: { entity: "participant", participantId, name: existing.name },
+    });
+
     res.json({ ok: true });
   } catch (err: any) { handleError(res, err); }
 });
@@ -662,7 +753,8 @@ router.post("/send-invite-email-batch", requireAuth, requireParticipantEditAcces
     let sent = 0, failed = 0, noEmail = 0;
     const failures: string[] = [];
 
-    for (const p of targets) {
+    for (let i = 0; i < targets.length; i++) {
+      const p = targets[i];
       const email = p.identifierType === "email" && p.identifier ? p.identifier.trim() : null;
       if (!email || !isValidEmail(email)) { noEmail++; continue; }
 
@@ -686,6 +778,8 @@ router.post("/send-invite-email-batch", requireAuth, requireParticipantEditAcces
         failed++;
         failures.push(`${p.name}: ${result.error}`);
       }
+      // SMTP throttle — avoid tripping provider rate limits on large batches
+      if (i < targets.length - 1) await sleep(BATCH_SEND_DELAY_MS);
     }
 
     res.json({ ok: true, sent, failed, noEmail, failures });

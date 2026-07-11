@@ -1,34 +1,5 @@
-export interface FieldCondition {
-  field: string;
-  value?: string | null;
-  negate?: boolean;
-}
-
-export interface VisibilityAwareField {
-  conditions?: FieldCondition[] | null;
-  conditionOperator?: "AND" | "OR" | null;
-}
-
-function evaluateCondition(condition: FieldCondition, watched: Record<string, any>): boolean {
-  const triggerVal = watched[condition.field];
-  let matches: boolean;
-  if (condition.value === null || condition.value === undefined || condition.value === "") {
-    matches = triggerVal !== "" && triggerVal !== null && triggerVal !== undefined;
-  } else {
-    matches = String(triggerVal ?? "") === condition.value;
-  }
-  return condition.negate ? !matches : matches;
-}
-
-/**
- * Determines whether a field should be visible given the current values of the form.
- * Supports multiple conditions combined with AND/OR, and per-condition negation (NOT).
- */
-export function isFieldVisible(f: VisibilityAwareField, watched: Record<string, any>): boolean {
-  const conditions = f.conditions;
-  if (!conditions || conditions.length === 0) return true;
-  const operator = f.conditionOperator || "AND";
-  return operator === "OR"
-    ? conditions.some(c => evaluateCondition(c, watched))
-    : conditions.every(c => evaluateCondition(c, watched));
-}
+// Re-exported from shared/ so the exact same visibility logic is enforced
+// both in the browser (hiding fields) and on the server (validation +
+// clearing values of hidden fields on submit). Keep this file so existing
+// imports (`@/lib/fieldVisibility`) across the client keep working.
+export { isFieldVisible, type FieldCondition, type VisibilityAwareField } from "@shared/fieldVisibility";

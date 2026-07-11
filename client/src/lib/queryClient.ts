@@ -49,8 +49,11 @@ export async function apiRequest<T = any>(
       signal: controller.signal,
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || "حدث خطأ غير متوقع");
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      const e: any = new Error(body.error || "حدث خطأ غير متوقع");
+      e.status = res.status;
+      e.body = body;
+      throw e;
     }
     const text = await res.text();
     if (!text) return {} as T;

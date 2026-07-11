@@ -16,13 +16,7 @@ import { projects, projectParticipants } from "../../shared/schema.js";
 import { eq, and, isNull, or, lt, sql } from "drizzle-orm";
 import { decrypt } from "./crypto.js";
 import { sendParticipantReminderEmail } from "./email.js";
-
-function getBaseUrl(): string {
-  const domains = process.env.REPLIT_DOMAINS?.split(",");
-  if (domains?.length) return `https://${domains[0].trim()}`;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  return process.env.APP_URL || "";
-}
+import { getTrustedBaseUrl } from "../utils/baseUrl.js";
 
 /** Per-process overlap guard — prevents a slow cycle from spawning a second. */
 let isRunning = false;
@@ -31,7 +25,7 @@ async function runReminderCycle() {
   if (isRunning) return;
   isRunning = true;
   try {
-    const baseUrl = getBaseUrl();
+    const baseUrl = getTrustedBaseUrl();
     if (!baseUrl) return;
 
     const activeProjects = await db

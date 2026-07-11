@@ -55,6 +55,18 @@ export function ProjectEditForm() {
 
   const isFieldVisible = (f: ProjectField) => checkFieldVisible(f as any, watchedValues);
 
+  // إصلاح: مسح قيمة الحقل عند إخفائه بسبب شرط غير متحقق — يمنع إرسال قيمة قديمة
+  // لحقل لم يعد المستخدم يراه.
+  useEffect(() => {
+    for (const f of fields) {
+      if (f.fieldType === "heading" || f.fieldType === "autoincrement") continue;
+      if (!checkFieldVisible(f as any, watchedValues) && watchedValues[f.key] !== undefined && watchedValues[f.key] !== "") {
+        setValue(f.key, "");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(watchedValues), fields]);
+
   const grouped = fields
     .filter(f => f.fieldType !== "autoincrement")
     .reduce<Record<number, ProjectField[]>>((acc, f) => {

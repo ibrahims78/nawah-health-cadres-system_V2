@@ -119,7 +119,7 @@ export async function notifyParticipant(
 /** جلب username البوت عبر getMe */
 export async function getBotUsername(botToken: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, { signal: AbortSignal.timeout(5000) });
     const data = (await res.json()) as any;
     if (data.ok && data.result?.username) return data.result.username as string;
     return null;

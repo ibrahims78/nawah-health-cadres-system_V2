@@ -78,6 +78,8 @@ export function ProjectParticipants() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
 
   // Dialogs
   const [addDialog, setAddDialog] = useState(false);
@@ -154,11 +156,21 @@ export function ProjectParticipants() {
     queryFn: () => fetchJson(`/api/projects/${id}/fields`),
   });
 
-  const { data: participants = [], isLoading } = useQuery<Participant[]>({
-    queryKey: ["/api/projects", id, "participants"],
-    queryFn: () => fetchJson(`/api/projects/${id}/participants`),
+  // بحث/تصفية/ترقيم صفحات يُجرى على الخادم — GET / يدعم page/pageSize/search/status
+  // ويُعيد شكلاً مُرقَّماً {items,total,page,pageSize} عند تمرير أي من هذه المعاملات.
+  const { data: participantsPage, isLoading } = useQuery<{ items: Participant[]; total: number; page: number; pageSize: number }>({
+    queryKey: ["/api/projects", id, "participants", { page, pageSize: PAGE_SIZE, search, status: statusFilter }],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+      if (search.trim()) params.set("search", search.trim());
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      return fetchJson(`/api/projects/${id}/participants?${params.toString()}`);
+    },
     refetchInterval: 30_000,
   });
+  const filtered = participantsPage?.items ?? [];
+  const totalFiltered = participantsPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
 
   const { data: stats } = useQuery<ParticipantStats>({
     queryKey: ["/api/projects", id, "participants", "stats"],
@@ -207,16 +219,26 @@ export function ProjectParticipants() {
     onError: (e: any) => toast({ variant: "destructive", description: `❌ ${e.message}` }),
   });
 
+  const [bulkDeleteWarning, setBulkDeleteWarning] = useState<{ withRecordsCount: number } | null>(null);
+
   const bulkDeleteMut = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/projects/${id}/participants/bulk-delete`, { ids: [...selected] }),
+    mutationFn: (force?: boolean) => apiRequest("POST", `/api/projects/${id}/participants/bulk-delete`, { ids: [...selected], force: !!force }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/projects", id, "participants"] });
       qc.invalidateQueries({ queryKey: ["/api/projects", id, "participants", "stats"] });
       setSelected(new Set());
       setDeleteBulk(false);
+      setBulkDeleteWarning(null);
       toast({ description: isAr ? "✅ تم حذف المشاركين" : "✅ Participants deleted" });
     },
-    onError: (e: any) => toast({ variant: "destructive", description: `❌ ${e.message}` }),
+    onError: async (e: any) => {
+      // السيرفر يُرجع 409 مع needsConfirmation إذا كان لبعض المحددين سجل بيانات مُرسَل بالفعل
+      if (e?.status === 409 && e?.body?.needsConfirmation) {
+        setBulkDeleteWarning({ withRecordsCount: e.body.withRecordsCount });
+        return;
+      }
+      toast({ variant: "destructive", description: `❌ ${e.message}` });
+    },
   });
 
   const notifyAllMut = useMutation({
@@ -341,13 +363,6 @@ export function ProjectParticipants() {
   const toggleAll = () =>
     setSelected(prev => prev.size === filtered.length ? new Set() : new Set(filtered.map(p => p.id)));
 
-  const filtered = participants.filter(p => {
-    if (statusFilter !== "all" && p.status !== statusFilter) return false;
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return p.name.toLowerCase().includes(q) || (p.identifier || "").toLowerCase().includes(q);
-  });
-
   const idTypeLabel = (t: string) => {
     const map: Record<string, string> = { email: "بريد إلكتروني", phone: "هاتف", national_id: "رقم هوية", custom: "مخصص" };
     return isAr ? (map[t] || t) : t;
@@ -412,13 +427,13 @@ export function ProjectParticipants() {
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder={isAr ? "بحث باسم أو مُعرِّف..." : "Search by name or identifier..."}
               className="pr-9 text-sm"
               data-testid="input-search-participants"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
             <SelectTrigger className="w-44 text-sm" data-testid="select-status-filter">
               <SelectValue />
             </SelectTrigger>
@@ -454,7 +469,7 @@ export function ProjectParticipants() {
           ) : filtered.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p className="text-sm">{participants.length === 0
+              <p className="text-sm">{totalFiltered === 0 && !search.trim() && statusFilter === "all"
                 ? (isAr ? "لا يوجد مشاركون بعد. ابدأ بإضافة أو استيراد المشاركين." : "No participants yet. Add or import participants to get started.")
                 : (isAr ? "لا توجد نتائج مطابقة للفلتر." : "No participants match the filter.")
               }</p>
@@ -622,6 +637,24 @@ export function ProjectParticipants() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {totalFiltered > 0 && (
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5 border-t border-slate-100 dark:border-slate-700/50 text-xs text-muted-foreground">
+              <span>
+                {isAr
+                  ? `عرض ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalFiltered)} من ${totalFiltered}`
+                  : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalFiltered)} of ${totalFiltered}`}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="button-prev-page">
+                  {isAr ? "السابق" : "Prev"}
+                </Button>
+                <span>{isAr ? `صفحة ${page} من ${totalPages}` : `Page ${page} of ${totalPages}`}</span>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} data-testid="button-next-page">
+                  {isAr ? "التالي" : "Next"}
+                </Button>
+              </div>
             </div>
           )}
         </Card>
@@ -924,16 +957,32 @@ export function ProjectParticipants() {
       </Dialog>
 
       {/* ─── Bulk delete confirm ─── */}
-      <Dialog open={deleteBulk} onOpenChange={setDeleteBulk}>
+      <Dialog open={deleteBulk} onOpenChange={(open) => { setDeleteBulk(open); if (!open) setBulkDeleteWarning(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{isAr ? `حذف ${selected.size} مشاركين` : `Delete ${selected.size} Participants`}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">{isAr ? "هل أنت متأكد؟ لا يمكن التراجع." : "Are you sure? This cannot be undone."}</p>
+          {bulkDeleteWarning ? (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                {isAr
+                  ? `${bulkDeleteWarning.withRecordsCount} من المشاركين المحددين قد سجّلوا بياناتهم بالفعل. حذفهم سيحذفهم من قائمة المشاركين نهائياً (سجل البيانات المُرسَل يبقى في جدول السجلات لكن سيفقد الربط به). هل تريد المتابعة؟`
+                  : `${bulkDeleteWarning.withRecordsCount} of the selected participants have already submitted data. Deleting them removes them from the participants list permanently (their submitted record stays in the records table, but the link to it is lost). Continue?`}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{isAr ? "هل أنت متأكد؟ لا يمكن التراجع." : "Are you sure? This cannot be undone."}</p>
+          )}
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteBulk(false)}>{isAr ? "إلغاء" : "Cancel"}</Button>
-            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => bulkDeleteMut.mutate()} data-testid="button-bulk-delete-confirm">
-              {isAr ? "حذف الكل" : "Delete All"}
+            <Button variant="outline" onClick={() => { setDeleteBulk(false); setBulkDeleteWarning(null); }}>{isAr ? "إلغاء" : "Cancel"}</Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={bulkDeleteMut.isPending}
+              onClick={() => bulkDeleteMut.mutate(!!bulkDeleteWarning)}
+              data-testid="button-bulk-delete-confirm"
+            >
+              {bulkDeleteWarning ? (isAr ? "نعم، احذف على أي حال" : "Yes, delete anyway") : (isAr ? "حذف الكل" : "Delete All")}
             </Button>
           </DialogFooter>
         </DialogContent>

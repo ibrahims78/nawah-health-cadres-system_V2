@@ -205,6 +205,18 @@ export function ProjectRegister() {
 
   const isFieldVisible = (f: ProjectField, watched: Record<string, any>) => checkFieldVisible(f as any, watched);
 
+  // إصلاح: مسح قيمة الحقل عند إخفائه بسبب شرط غير متحقق — يمنع إرسال قيمة قديمة
+  // لحقل لم يعد المستخدم يراه (ولا يُسمح بإعادة تعبئته من مسودة قديمة).
+  useEffect(() => {
+    for (const f of fields) {
+      if (f.fieldType === "heading" || f.fieldType === "autoincrement") continue;
+      if (!checkFieldVisible(f as any, watchedValues) && watchedValues[f.key] !== undefined && watchedValues[f.key] !== "") {
+        setValue(f.key, "");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(watchedValues), fields]);
+
   const getStepFields = (stepNum: number) =>
     fields.filter(f => (f.stepNumber || 1) === stepNum && f.isVisible !== false);
 
