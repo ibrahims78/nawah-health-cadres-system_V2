@@ -248,9 +248,12 @@ export function ProjectSettings() {
       // Strip incomplete conditions (field === "") before sending to avoid Zod validation errors
       const cleanedFields = fields.map(f => ({
         ...f,
+        // تنظيف الشروط: حذف الشروط غير المكتملة
         conditions: Array.isArray((f as any).conditions)
           ? (f as any).conditions.filter((c: any) => c.field && c.field.trim() !== "")
           : (f as any).conditions,
+        // ضمان أن conditionOperator لا تكون null لتجنب خطأ Zod
+        conditionOperator: ((f as any).conditionOperator === "OR" ? "OR" : "AND") as "AND" | "OR",
       }));
       return apiRequest("POST", `/api/projects/${id}/fields`, { fields: cleanedFields });
     },
