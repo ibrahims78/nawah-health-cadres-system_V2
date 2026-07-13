@@ -105,7 +105,7 @@ export function CreateProject() {
         maxFileSizeMb: c.fieldType === "file" ? (c.maxFileSizeMb || null) : undefined,
         // Advanced options — persist conditions, validation, and access control configured in wizard
         conditions: c.conditions || null,
-        conditionOperator: c.conditionOperator || null,
+        conditionOperator: c.conditionOperator || "AND",
         validationMin: c.validationMin ?? null,
         validationMax: c.validationMax ?? null,
         validationRegex: c.validationRegex || null,
@@ -246,7 +246,7 @@ export function CreateProject() {
                   showIncludeCheckbox={!manualMode}
                   expanded={expandedFieldIdx === idx}
                   onToggleExpand={() => setExpandedFieldIdx(expandedFieldIdx === idx ? null : idx)}
-                  fieldTypeSet="create"
+                  fieldTypeSet="full"
                   outerTestId={`field-row-${idx}`}
                 />
               ))}

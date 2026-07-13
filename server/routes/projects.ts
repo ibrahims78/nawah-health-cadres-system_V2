@@ -271,7 +271,7 @@ router.post("/", requireEditorOrAdmin, async (req: Request, res: Response) => {
         validationRegex: f.validationRegex || null,
         validationMessage: f.validationMessage || null,
         conditions: Array.isArray(f.conditions) && f.conditions.length > 0 ? f.conditions : null,
-        conditionOperator: (f.conditionOperator === "OR" || f.conditionOperator === "AND") ? f.conditionOperator : null,
+        conditionOperator: (f.conditionOperator === "OR" || f.conditionOperator === "AND") ? f.conditionOperator : "AND",
         visibleTo: (["admin", "editor"].includes(f.visibleTo)) ? f.visibleTo : "all",
         isReadOnly: !!f.isReadOnly,
         isFullWidth: !!f.isFullWidth,

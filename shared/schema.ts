@@ -313,7 +313,7 @@ export const projectFieldSchema = z.object({
     value: z.string().max(500).nullable().optional(),
     negate: z.boolean().optional(),
   })).max(20, "عدد الشروط كبير جداً").nullable().optional(),
-  conditionOperator: z.enum(["AND", "OR"]).default("AND"),
+  conditionOperator: z.preprocess(v => (v === null || v === undefined ? "AND" : v), z.enum(["AND", "OR"])).default("AND"),
   visibleTo:   z.enum(["all", "admin", "editor"]).default("all"),
   isReadOnly:  z.boolean().default(false),
   isFullWidth: z.boolean().default(false),
