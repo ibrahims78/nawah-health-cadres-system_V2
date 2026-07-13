@@ -63,15 +63,15 @@ Schema is managed via `initDB()` in `server/index.ts` (CREATE TABLE IF NOT EXIST
 
 ## Replit Setup (completed)
 
-The following was done to get the project running on Replit (re-verified after another fresh GitHub import on 2026-07-11):
+The following was done to get the project running on Replit (re-verified after GitHub import on 2026-07-13):
 
 1. **Dependencies** — `npm install` installs all packages including `concurrently` (devDep used by `npm run dev`).
 2. **Database** — Replit's built-in PostgreSQL is used. Schema is applied via `npm run db:push` (Drizzle Kit reads `drizzle.config.ts` and `DATABASE_URL` from the runtime environment).
 3. **Secrets configured:**
-   - `SESSION_SECRET` — Express session signing key
-   - `ENCRYPTION_KEY` — 32-byte hex key for AES-256-GCM field encryption (regenerated and saved as a secret again during this setup, since a fresh GitHub import does not carry over Replit Secrets)
-4. **Workflow** — `Start application` runs `npm run dev` (concurrently starts Vite on port 5000 and Express on port 3001). Vite proxies `/api/*` to the backend automatically.
-5. **First run** — Verified: the app shows the setup wizard at `/` on a fresh database (no admin account yet) to create the first admin account.
+   - `SESSION_SECRET` — Express session signing key (set in Replit Secrets)
+   - `ENCRYPTION_KEY` — 32-byte hex key for AES-256-GCM field encryption (set in Replit Secrets; a fresh GitHub import does not carry over secrets, so this must be set on each new import)
+4. **Workflow** — `Start application` runs `npm run dev` (concurrently starts Vite on port 5000 and Express on port 3001; port 5000 mapped to external port 80). Vite proxies `/api/*` to the backend automatically.
+5. **First run** — Verified: the app shows the setup wizard at `/` on a fresh database to create the first admin account. The 401 responses in the browser console on that page are expected (auth-check calls before any account exists).
 
 ## Architecture — Unified Components (added 2026-07-11)
 
