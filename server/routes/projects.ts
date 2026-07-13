@@ -1128,6 +1128,30 @@ router.post("/:id/test-telegram", requireEditorOrAdmin, requireProjectEditAccess
   }
 });
 
+// جلب معلومات البوت (getMe) للتحقق من صحة التوكن وعرض اسم البوت
+router.post("/:id/telegram-bot-info", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    let botToken = token;
+    if (!botToken) {
+      const [proj] = await db.select({ telegramBotTokenEnc: projects.telegramBotTokenEnc }).from(projects).where(eq(projects.id, String(req.params.id)));
+      if (proj?.telegramBotTokenEnc) botToken = decrypt(proj.telegramBotTokenEnc);
+    }
+    if (!botToken) return res.status(400).json({ ok: false, message: "أدخل Bot Token أولاً" });
+
+    const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, { signal: AbortSignal.timeout(8000) });
+    const data = (await r.json()) as any;
+    if (!data.ok) {
+      const desc: string = data.description || "";
+      const hint = desc.includes("Unauthorized") ? "Bot Token غير صحيح — تحقق من الرمز في BotFather" : desc;
+      return res.json({ ok: false, message: `❌ ${hint}` });
+    }
+    return res.json({ ok: true, username: data.result.username, firstName: data.result.first_name });
+  } catch (err: any) {
+    handleError(res, err);
+  }
+});
+
 router.post("/:id/telegram-updates", requireEditorOrAdmin, requireProjectEditAccess, async (req: Request, res: Response) => {
   try {
     const { token } = req.body;

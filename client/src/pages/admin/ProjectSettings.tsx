@@ -56,6 +56,9 @@ export function ProjectSettings() {
   // Telegram-specific state
   const [chatIdLoading, setChatIdLoading] = useState(false);
   const [chatIdChats, setChatIdChats] = useState<{ id: string; title: string; type: string }[] | null>(null);
+  const [botInfo, setBotInfo] = useState<{ username: string; firstName: string } | null>(null);
+  const [botInfoLoading, setBotInfoLoading] = useState(false);
+  const [chatIdGuide, setChatIdGuide] = useState(false);
 
   // Drive-specific state
   const [driveModal, setDriveModal] = useState(false);
@@ -300,17 +303,34 @@ export function ProjectSettings() {
     setSheetsLoading(null);
   };
 
+  const verifyBotToken = async (values: any) => {
+    setBotInfoLoading(true); setBotInfo(null); setChatIdGuide(false); setChatIdChats(null);
+    const res: any = await apiRequest("POST", `/api/projects/${id}/telegram-bot-info`, { token: values.telegramBotToken }).catch(e => ({ ok: false, message: `❌ ${e.message}` }));
+    if (res.ok) {
+      setBotInfo({ username: res.username, firstName: res.firstName });
+      setChatIdGuide(true);
+    } else {
+      toast({ variant: "destructive", description: res.message || "❌ Bot Token غير صحيح" });
+    }
+    setBotInfoLoading(false);
+  };
+
   const fetchChatId = async (values: any) => {
+    // إذا لم نتحقق من التوكن بعد، ابدأ بالتحقق أولاً
+    if (!botInfo) {
+      await verifyBotToken(values);
+      return;
+    }
     setChatIdLoading(true); setChatIdChats(null);
     const res: any = await apiRequest("POST", `/api/projects/${id}/telegram-updates`, { token: values.telegramBotToken }).catch(e => ({ ok: false, message: `❌ ${e.message}` }));
     if (res.ok && res.chats) {
       setChatIdChats(res.chats);
+      setChatIdGuide(false);
+    } else if (res.needsAction) {
+      // لم تصل رسائل بعد — أظهر التعليمات في الكارد بدلاً من Toast
+      setChatIdGuide(true);
     } else {
-      // needsAction = informational guidance, not a real error — show plain toast
-      toast({
-        variant: res.needsAction ? undefined : "destructive",
-        description: res.message || (isAr ? "❌ تعذّر جلب Chat ID" : "❌ Could not fetch Chat ID"),
-      });
+      toast({ variant: "destructive", description: res.message || "❌ تعذّر جلب Chat ID" });
     }
     setChatIdLoading(false);
   };
@@ -694,29 +714,93 @@ export function ProjectSettings() {
         {tab === "telegram" && (
           <form onSubmit={handleSubmit(d => testTelegram(d))}>
             <Card className="p-5 space-y-4">
+              {/* Bot Token */}
               <div className="space-y-1.5">
-                <Label className="text-xs">{isAr ? "Bot Token" : "Bot Token"}</Label>
-                <Input {...register("telegramBotToken")} placeholder="123456789:AAG..." type="password" data-testid="input-telegramBotToken" />
+                <Label className="text-xs">Bot Token</Label>
+                <div className="flex gap-2">
+                  <Input {...register("telegramBotToken")} placeholder="123456789:AAG..." type="password" className="flex-1" data-testid="input-telegramBotToken" />
+                  <Button type="button" variant="outline" size="sm" onClick={handleSubmit(verifyBotToken)} disabled={botInfoLoading} title={isAr ? "تحقق من التوكن" : "Verify token"}>
+                    {botInfoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">{isAr ? "Chat ID" : "Chat ID"}</Label>
-                <Input {...register("telegramChatId")} placeholder="-100..." data-testid="input-telegramChatId" />
-              </div>
+
+              {/* Bot info banner */}
+              {botInfo && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-green-700 dark:text-green-400">{botInfo.firstName} — @{botInfo.username}</p>
+                    <p className="text-[11px] text-green-600 dark:text-green-500">{isAr ? "التوكن صحيح ✓" : "Token verified ✓"}</p>
+                  </div>
+                  <a
+                    href={`https://t.me/${botInfo.username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 transition-colors flex-shrink-0"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {isAr ? "فتح البوت" : "Open Bot"}
+                  </a>
+                </div>
+              )}
+
+              {/* Step-by-step guide for Chat ID */}
+              {chatIdGuide && botInfo && (
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 space-y-2">
+                  <p className="text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                    {isAr ? "📋 خطوات جلب Chat ID:" : "📋 Steps to get Chat ID:"}
+                  </p>
+                  <ol className="text-[11px] text-amber-700 dark:text-amber-400 space-y-1.5 list-none">
+                    <li className="flex items-start gap-2">
+                      <span className="bg-amber-500 text-white rounded-full w-4 h-4 flex-shrink-0 flex items-center justify-center text-[9px] font-bold mt-0.5">1</span>
+                      <span>
+                        {isAr ? "افتح البوت في تيليغرام: " : "Open the bot on Telegram: "}
+                        <a href={`https://t.me/${botInfo.username}`} target="_blank" rel="noopener noreferrer"
+                          className="underline font-medium">@{botInfo.username}</a>
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-amber-500 text-white rounded-full w-4 h-4 flex-shrink-0 flex items-center justify-center text-[9px] font-bold mt-0.5">2</span>
+                      <span>{isAr ? "اضغط Start أو أرسل /start" : "Press Start or send /start"}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-amber-500 text-white rounded-full w-4 h-4 flex-shrink-0 flex items-center justify-center text-[9px] font-bold mt-0.5">3</span>
+                      <span>{isAr ? "ارجع هنا واضغط «جلب Chat ID» مجدداً" : "Come back here and click 'Fetch Chat ID' again"}</span>
+                    </li>
+                  </ol>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-500 border-t border-amber-200 dark:border-amber-700 pt-2 mt-1">
+                    {isAr
+                      ? "💡 لمجموعة أو قناة: أضف البوت كمشرف أولاً ثم أرسل أي رسالة في المجموعة"
+                      : "💡 For a group/channel: add the bot as admin first, then send any message in the group"}
+                  </p>
+                </div>
+              )}
+
+              {/* Available chats list */}
               {chatIdChats && chatIdChats.length > 0 && (
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground">{isAr ? "المجموعات المتاحة:" : "Available chats:"}</p>
+                  <p className="text-xs font-semibold text-muted-foreground">{isAr ? "اختر مجموعة / محادثة:" : "Select a chat:"}</p>
                   {chatIdChats.map(c => (
                     <button key={c.id} type="button"
-                      onClick={() => setValue("telegramChatId", c.id)}
-                      className="w-full text-right text-xs p-2 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-primary/10 flex justify-between items-center">
-                      <span className="font-mono text-muted-foreground">{c.id}</span>
-                      <span>{c.title} ({c.type})</span>
+                      onClick={() => { setValue("telegramChatId", c.id); setChatIdChats(null); }}
+                      className="w-full text-right text-xs p-2.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-900/40 flex justify-between items-center transition-colors">
+                      <span className="font-mono text-muted-foreground text-[11px]">{c.id}</span>
+                      <span className="font-medium">{c.title} <span className="text-muted-foreground text-[10px]">({c.type})</span></span>
                     </button>
                   ))}
                 </div>
               )}
+
+              {/* Chat ID field */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Chat ID</Label>
+                <Input {...register("telegramChatId")} placeholder="-100..." data-testid="input-telegramChatId" />
+              </div>
+
+              {/* Actions */}
               <div className="flex gap-2 flex-wrap">
-                <Button type="button" variant="outline" onClick={handleSubmit(fetchChatId)} disabled={chatIdLoading} data-testid="button-fetch-chatid">
+                <Button type="button" variant="outline" onClick={handleSubmit(fetchChatId)} disabled={chatIdLoading || botInfoLoading} data-testid="button-fetch-chatid">
                   {chatIdLoading ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <BotMessageSquare className="h-4 w-4 ml-1" />}
                   {isAr ? "جلب Chat ID" : "Fetch Chat ID"}
                 </Button>
