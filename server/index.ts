@@ -100,7 +100,7 @@ app.use(express.urlencoded({ extended: true, limit: "512kb" }));
 
 // ── Session ───────────────────────────────────────────────────
 app.use(session({
-  store: new PgSession({ pool, createTableIfMissing: true }),
+  store: new PgSession({ pool, createTableIfMissing: true, pruneSessionInterval: 60 * 60 /* prune expired sessions every hour */ }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,

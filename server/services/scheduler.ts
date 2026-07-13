@@ -42,7 +42,8 @@ async function runReminderCycle() {
       .where(eq(projects.reminderEnabled, true));
 
     for (const proj of activeProjects) {
-      const intervalDays = proj.reminderIntervalDays ?? 2;
+      // Enforce minimum of 1 day to prevent 0-interval spam
+      const intervalDays = Math.max(1, proj.reminderIntervalDays ?? 2);
       const maxCount = proj.reminderMaxCount ?? 3;
       const cutoff = new Date(Date.now() - intervalDays * 24 * 60 * 60 * 1000);
 
@@ -213,7 +214,7 @@ async function runPublicDraftReminderCycle() {
       .where(eq(projects.publicReminderEnabled, true));
 
     for (const proj of activeProjects) {
-      const intervalDays = proj.reminderIntervalDays ?? 2;
+      const intervalDays = Math.max(1, proj.reminderIntervalDays ?? 2);
       const maxCount = proj.reminderMaxCount ?? 3;
       const cutoff = new Date(Date.now() - intervalDays * 24 * 60 * 60 * 1000);
 
@@ -238,6 +239,8 @@ async function runPublicDraftReminderCycle() {
 
       for (const c of candidates) {
         if (!c.email) continue;
+        // Guard: only send to structurally valid email addresses
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) continue;
 
         // ── Atomic claim ──────────────────────────────────────────────
         const now = new Date();
@@ -280,6 +283,23 @@ async function runPublicDraftReminderCycle() {
   }
 }
 
+/**
+ * Periodic cleanup of stale form drafts (older than 30 days) and
+ * expired sessions that connect-pg-simple may miss between hourly prunes.
+ * Non-blocking — failures are logged but never throw.
+ */
+async function runCleanupCycle() {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await pool.query(
+      `DELETE FROM project_form_drafts WHERE updated_at < $1`,
+      [thirtyDaysAgo]
+    );
+  } catch (err) {
+    console.error("[scheduler] Cleanup cycle error:", err);
+  }
+}
+
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 /** Small delay between email sends to avoid hitting SMTP rate limits. */
@@ -302,8 +322,11 @@ export function startScheduler() {
   setTimeout(() => {
     runReminderCycle();
     runPublicDraftReminderCycle();
+    runCleanupCycle(); // initial cleanup
     reminderIntervalId = setInterval(runReminderCycle, INTERVAL_MS);
     draftReminderIntervalId = setInterval(runPublicDraftReminderCycle, INTERVAL_MS);
+    // Cleanup every 6 hours
+    setInterval(runCleanupCycle, 6 * 60 * 60 * 1000);
   }, 60 * 1000);
 
   // Graceful shutdown — clear intervals so the process can exit cleanly.

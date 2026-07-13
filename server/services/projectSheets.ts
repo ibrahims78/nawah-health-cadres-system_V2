@@ -311,13 +311,37 @@ export async function updateRecordRow(
       range: sheetRange(sheetName, "1:1"),
     });
     const headerRow: string[] = headerRes.data.values?.[0] || [];
-    const row = buildRowByHeaders(headerRow, fields, recordData, seqNum);
 
-    await sheets.spreadsheets.values.update({
+    // ── Sparse update — only touch cells that correspond to project fields ──
+    // Writing a full row with buildRowByHeaders would overwrite manually-added
+    // columns (those whose header doesn't match any field label) with empty strings.
+    // Instead we build individual ValueRange objects for each known column only.
+    const data: { range: string; values: string[][] }[] = [];
+
+    // Sequential-number column ("م")
+    const seqIdx = headerRow.indexOf("م");
+    if (seqIdx >= 0) {
+      data.push({ range: sheetRange(sheetName, `${columnLetter(seqIdx)}${rowIndex}`), values: [[String(seqNum)]] });
+    }
+
+    for (const f of fields) {
+      const colIdx = headerRow.indexOf(f.label);
+      if (colIdx < 0) continue;
+      let val: string;
+      if (f.fieldType === "file") {
+        val = resolveFileValuesForSheet(recordData[f.key]);
+      } else {
+        const raw = recordData[f.key];
+        val = Array.isArray(raw) ? raw.join(", ") : String(raw ?? "");
+      }
+      data.push({ range: sheetRange(sheetName, `${columnLetter(colIdx)}${rowIndex}`), values: [[val]] });
+    }
+
+    if (data.length === 0) return;
+
+    await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: proj.googleSheetId,
-      range: sheetRange(sheetName, `A${rowIndex}`),
-      valueInputOption: "RAW",
-      requestBody: { values: [row] },
+      requestBody: { valueInputOption: "RAW", data },
     });
   } catch (err) {
     console.error("[ProjectSheets] updateRecordRow error:", err);

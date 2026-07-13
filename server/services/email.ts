@@ -84,10 +84,12 @@ export async function sendInvitationEmail(
       ? `${expiryHours / 24} ${expiryHours === 24 ? "يوم" : "أيام"}`
       : `${expiryHours} ساعة`;
 
+    const safeToInvite = to.replace(/[\r\n]+/g, "");
+    const safeSubjectInvite = `دعوة للانضمام إلى ${appName}`.replace(/[\r\n]+/g, " ");
     await transporter.sendMail({
       from: `"${fromName}" <${fromUser}>`,
-      to,
-      subject: `دعوة للانضمام إلى ${appName}`,
+      to: safeToInvite,
+      subject: safeSubjectInvite,
       html: `
         <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
           <h2 style="color: #1d4ed8; margin-top: 0;">📋 ${escapeHtml(appName)}</h2>
@@ -131,10 +133,12 @@ export async function sendParticipantInviteEmail(opts: {
     const safeApp     = escapeHtml(appName);
     const safeLink    = encodeURI(inviteLink);
 
+    const safeToParticipant = to.replace(/[\r\n]+/g, "");
+    const safeSubjectParticipant = `دعوة للتسجيل في ${safeProject}`.replace(/[\r\n]+/g, " ");
     await transporter.sendMail({
       from: `"${fromName}" <${fromUser}>`,
-      to,
-      subject: `دعوة للتسجيل في ${safeProject}`,
+      to: safeToParticipant,
+      subject: safeSubjectParticipant,
       html: `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -260,10 +264,12 @@ export async function sendParticipantConfirmationEmail(opts: {
       deadlineNote = `<p style="margin:0 0 20px;color:#374151;font-size:14px;">✏️ يمكنك تعديل بياناتك حتى: <strong>${escapeHtml(formatted)}</strong></p>`;
     }
 
+    const safeToConfirm = to.replace(/[\r\n]+/g, "");
+    const safeSubjectConfirm = `✅ تم تسجيلك بنجاح في ${escapeHtml(projectName)}`.replace(/[\r\n]+/g, " ");
     await transporter.sendMail({
       from: `"${fromName}" <${fromUser}>`,
-      to,
-      subject: `✅ تم تسجيلك بنجاح في ${escapeHtml(projectName)}`,
+      to: safeToConfirm,
+      subject: safeSubjectConfirm,
       html: `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>

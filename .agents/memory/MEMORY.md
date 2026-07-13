@@ -22,3 +22,4 @@
 - [Deep audit round 4 fixes](deep-audit-4.md) — last-admin demotion guard, register-invite tx+advisory-lock, unique indexes (fields key + records seq), scheduler LIMIT, SMTP CRLF, change-password rate-limit+session-invalidation
 - [Deep audit round 5 fixes](deep-audit-5.md) — safeHref XSS guard, FK onDelete SET NULL, form-draft email index, dead remember-me token removed, symlink escape blocked in file serving
 - [Deep audit round 6 fixes](deep-audit-6.md) — fullName trim, CRLF in email headers, Drive delete OAuth errors, PATCH IDOR WHERE scope, global error handler, schedulerStarted guard
+- [Deep audit round 7 fixes](deep-audit-7.md) — intervalDays min(1) spam guard, isValidEmail in draft reminder, CRLF in all 3 email fns, updateRecordRow sparse batchUpdate, prototype pollution guard, appLogoUrl URL validation, session pruning, draft cleanup cycle

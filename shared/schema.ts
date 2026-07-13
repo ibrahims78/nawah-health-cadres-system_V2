@@ -379,7 +379,7 @@ export const updateUserRoleSchema = z.object({
 
 export const globalSettingsSchema = z.object({
   appName:               z.string().min(1).max(100).optional(),
-  appLogoUrl:            z.string().max(500).optional(),
+  appLogoUrl:            z.string().max(500).regex(/^https?:\/\//, "يجب أن يبدأ الرابط بـ http:// أو https://").optional().or(z.literal("")),
   defaultLanguage:       z.enum(["ar", "en"]).optional(),
   timezone:              z.string().max(100).optional(),
   invitationExpiryHours: z.number().int().min(1).max(8760).optional(),

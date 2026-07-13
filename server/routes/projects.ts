@@ -833,7 +833,12 @@ router.patch("/:id/records/:recordId", requireEditorOrAdmin, requireProjectEditA
     // Strip autoincrement fields from the incoming payload — they are immutable after creation
     const autoFields = await db.select({ key: projectFields.key }).from(projectFields)
       .where(and(eq(projectFields.projectId, pid), sql`${projectFields.fieldType} = 'autoincrement'`));
-    const safeBody: Record<string, any> = { ...req.body };
+    // Sanitize req.body to prevent prototype pollution — strip dangerous keys
+    // before spreading into the JSONB data column.
+    const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+    const safeBody: Record<string, any> = Object.fromEntries(
+      Object.entries(req.body as Record<string, any>).filter(([k]) => !DANGEROUS_KEYS.has(k))
+    );
     for (const { key } of autoFields) {
       if (key in (existing.data as any)) {
         // Restore the original autoincrement value from the existing record
